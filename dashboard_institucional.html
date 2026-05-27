@@ -1318,6 +1318,179 @@ function buildDiaCurso(curso) {
     .join('');
 }
 
+// ── Trayectoria DIA + SEPA del curso con selección de estudiantes ──────────
+function buildDiaSepaTrayCurso(curso, students) {
+  _cursoTrayCharts.forEach(ch => ch.destroy());
+  _cursoTrayCharts = [];
+
+  const container = document.getElementById('curso-tray-card');
+  if(!container) return;
+
+  const _diaAvg = obj => obj && Object.keys(obj).length
+    ? +(Object.values(obj).reduce((a,b)=>a+b,0)/Object.values(obj).length).toFixed(1)
+    : null;
+
+  // ── DIA: timeline de todos los años con datos ─────────────
+  const diaYrsSet = new Set();
+  students.forEach(s => Object.keys(s.dia).forEach(yr => diaYrsSet.add(+yr)));
+  const diaPts = [];
+  [...diaYrsSet].sort().forEach(yr => {
+    _DIA_PERIODO_KEYS.forEach(pkey => {
+      const any = students.some(s => {
+        const l = s.dia[yr]?.[pkey]?.lectura;
+        const m = s.dia[yr]?.[pkey]?.matematica;
+        return (l && Object.keys(l).length) || (m && Object.keys(m).length);
+      });
+      if(any) diaPts.push({ yr, pkey, label:`${_DIA_SHORT[pkey]} ${yr}` });
+    });
+  });
+
+  // ── SEPA: claves temporales presentes en el curso ─────────
+  const sLSet = new Set(), sGSet = new Set();
+  students.forEach(s => {
+    Object.keys(s.sepa.lenguaje).forEach(k => sLSet.add(k));
+    Object.keys(s.sepa.matematica).forEach(k => sGSet.add(k));
+  });
+  const _sk = k => k.replace('_P','_0').replace('_F','_1');
+  const sLKeys = [...sLSet].sort((a,b)=>_sk(a).localeCompare(_sk(b)));
+  const sGKeys = [...sGSet].sort((a,b)=>_sk(a).localeCompare(_sk(b)));
+  const sLLbls = sLKeys.map(k=>k.replace('_P',' inicio').replace('_F',' fin'));
+  const sGLbls = sGKeys.map(k=>k.replace('_P',' inicio').replace('_F',' fin'));
+
+  const hasDia   = diaPts.length > 0;
+  const hasSepaL = sLKeys.length > 0;
+  const hasSepaG = sGKeys.length > 0;
+  if(!hasDia && !hasSepaL && !hasSepaG) return;
+
+  // ── Promedios del curso ───────────────────────────────────
+  const _avg = arr => arr.length ? +(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : null;
+
+  const diaLAvg = diaPts.map(p => {
+    const vs = students.map(s=>_diaAvg(s.dia[p.yr]?.[p.pkey]?.lectura)).filter(v=>v!==null);
+    return _avg(vs);
+  });
+  const diaMAvg = diaPts.map(p => {
+    const vs = students.map(s=>_diaAvg(s.dia[p.yr]?.[p.pkey]?.matematica)).filter(v=>v!==null);
+    return _avg(vs);
+  });
+  const sLAvg = sLKeys.map(k => {
+    const vs = students.map(s=>s.sepa.lenguaje[k]).filter(v=>v!=null);
+    return vs.length ? Math.round(vs.reduce((a,b)=>a+b,0)/vs.length) : null;
+  });
+  const sGAvg = sGKeys.map(k => {
+    const vs = students.map(s=>s.sepa.matematica[k]).filter(v=>v!=null);
+    return vs.length ? Math.round(vs.reduce((a,b)=>a+b,0)/vs.length) : null;
+  });
+
+  // ── Paleta de colores por estudiante ─────────────────────
+  const _PAL = ['#e74c3c','#27ae60','#f39c12','#8e44ad','#2980b9',
+                '#16a085','#d35400','#6c3483','#c0392b','#1abc9c',
+                '#e67e22','#7d6608','#2c3e50','#0e6655','#6e2f1a'];
+
+  // ── Construir HTML ────────────────────────────────────────
+  const _sub = (t, id) =>
+    '<div>' +
+    '<div style="font-size:10px;color:var(--muted);font-family:var(--mono);' +
+    'text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">' + t + '</div>' +
+    '<div style="position:relative;height:200px"><canvas id="' + id + '"></canvas></div></div>';
+
+  let chartsHtml = '';
+  if(hasDia) chartsHtml +=
+    '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
+    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">DIA</div>' +
+    '<div class="g2" style="margin-bottom:22px">' +
+    _sub('Lectura','chart-ctlec') + _sub('Matemática','chart-ctmat') + '</div>';
+  if(hasSepaL || hasSepaG) chartsHtml +=
+    '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
+    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">SEPA</div>' +
+    '<div class="g2">' +
+    (hasSepaL ? _sub('Lenguaje','chart-ctsleng') : '<div></div>') +
+    (hasSepaG ? _sub('Matemática','chart-ctsmat') : '<div></div>') + '</div>';
+
+  container.innerHTML =
+    '<div class="card mb24">' +
+    '<div style="display:flex;align-items:center;margin-bottom:14px">' +
+    '<span class="card-title" style="margin:0">Trayectoria DIA · SEPA · ' + curso.grade_name + '</span>' +
+    '</div>' +
+    '<div id="ct-ssel" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;align-items:center">' +
+    '<span style="font-size:11px;color:var(--muted);font-family:var(--mono);' +
+    'text-transform:uppercase;letter-spacing:.5px;margin-right:2px">Superponer:</span>' +
+    '</div>' + chartsHtml + '</div>';
+
+  // ── Chips de selección por estudiante ─────────────────────
+  const selEl = document.getElementById('ct-ssel');
+  students.forEach((s, i) => {
+    const color = _PAL[i % _PAL.length];
+    const pts   = s.nombre.replace(',','').split(/\s+/).filter(Boolean);
+    let lbl = (pts[0]||'') + (pts[1] ? ' '+pts[1] : '');
+    if(lbl.length > 18) lbl = lbl.slice(0,17)+'…';
+    const chip = document.createElement('button');
+    chip.className = 'dia-toggle';
+    chip.textContent = lbl;
+    chip.title = s.nombre;
+    chip.style.cssText = 'font-size:10px;padding:3px 8px;border-color:'+color+';color:var(--text)';
+    chip.onclick = () => {
+      const on = chip.classList.toggle('active');
+      chip.style.cssText = on
+        ? 'font-size:10px;padding:3px 8px;background:'+color+';border-color:'+color+';color:#fff'
+        : 'font-size:10px;padding:3px 8px;border-color:'+color+';color:var(--text)';
+      _cursoTrayCharts.forEach(ch => {
+        const ds = ch.data.datasets[i+1];
+        if(ds) { ds.hidden = !on; ch.update(); }
+      });
+    };
+    selEl.appendChild(chip);
+  });
+
+  // ── Factory de gráfico ────────────────────────────────────
+  const _mkOpts = (mn,mx,step,sfx) => ({
+    responsive:true, maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.raw!=null?ctx.raw+sfx:'—')}},
+    },
+    scales:{
+      x:{grid:{color:'rgba(184,208,232,.5)'},ticks:{color:'#5a7a96',font:{size:9,family:'IBM Plex Mono'},maxRotation:30}},
+      y:{min:mn,max:mx,grid:{color:'rgba(184,208,232,.5)'},
+         ticks:{color:'#5a7a96',font:{size:10,family:'IBM Plex Mono'},stepSize:step,callback:v=>v+sfx}},
+    },
+  });
+
+  const _mkChart = (id, lbls, avgData, perStFn, opts) => {
+    const cvs = document.getElementById(id);
+    if(!cvs) return;
+    const datasets = [
+      { label:'Promedio curso', data:avgData,
+         borderColor:'#1a3a5c', backgroundColor:'rgba(26,58,92,.13)',
+         borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.3 },
+      ...students.map((s,i) => ({
+        label:s.nombre, data:perStFn(s),
+        borderColor:_PAL[i%_PAL.length], backgroundColor:'transparent',
+        borderWidth:1.5, pointRadius:3, tension:.3, hidden:true, borderDash:[5,3],
+      })),
+    ];
+    const ch = new Chart(cvs, {type:'line', data:{labels:lbls, datasets}, options:opts});
+    _cursoTrayCharts.push(ch);
+  };
+
+  const diaOpts  = _mkOpts(0,100,20,'%');
+  const sepaOpts = _mkOpts(450,850,50,'');
+
+  if(hasDia) {
+    _mkChart('chart-ctlec', diaPts.map(p=>p.label), diaLAvg,
+      s => diaPts.map(p => _diaAvg(s.dia[p.yr]?.[p.pkey]?.lectura)), diaOpts);
+    _mkChart('chart-ctmat', diaPts.map(p=>p.label), diaMAvg,
+      s => diaPts.map(p => _diaAvg(s.dia[p.yr]?.[p.pkey]?.matematica)), diaOpts);
+  }
+  if(hasSepaL)
+    _mkChart('chart-ctsleng', sLLbls, sLAvg,
+      s => sLKeys.map(k => s.sepa.lenguaje[k]??null), sepaOpts);
+  if(hasSepaG)
+    _mkChart('chart-ctsmat', sGLbls, sGAvg,
+      s => sGKeys.map(k => s.sepa.matematica[k]??null), sepaOpts);
+}
+
 let _cursoSort = { key:'nombre', dir:1 };
 let _cursoFilter = 'all';
 let _cursoSearch = '';
@@ -1338,10 +1511,12 @@ function _applyCursoFilter() {
   const lv = document.getElementById('curso-lista-view');
   const sv = document.getElementById('curso-seguim-card');
   const dv = document.getElementById('curso-dia-card');
+  const tv = document.getElementById('curso-tray-card');
   if(rv) rv.style.display = isResumen ? '' : 'none';
   if(lv) lv.style.display = isResumen ? 'none' : '';
   if(sv) sv.style.display = isResumen ? '' : 'none';
   if(dv) dv.style.display = isResumen ? '' : 'none';
+  if(tv) tv.style.display = isResumen ? '' : 'none';
   if(isResumen) return;
   const active_cols = window._cursoStudents[0]?.napsis[CUR_YEAR]?.col_map?.filter(c=>!c.np)??[];
   let list = [...window._cursoStudents];
