@@ -1033,6 +1033,7 @@ function napToggle(view) {
   asig.style.display = view === 'asig' ? '' : 'none';
   btnP.classList.toggle('active', view === 'prom');
   btnA.classList.toggle('active', view === 'asig');
+  if(view === 'prom') { const el = document.getElementById('est-subj-comp'); if(el) el.innerHTML = ''; }
 }
 
 function renderDiaBars(containerId, materia) {
@@ -1137,9 +1138,12 @@ function initCursos() {
 }
 
 let _cursoCharts = [];
+let _cursoTrayCharts = [];
 function renderCurso() {
   _cursoCharts.forEach(ch => ch.destroy());
   _cursoCharts = [];
+  _cursoTrayCharts.forEach(ch => ch.destroy());
+  _cursoTrayCharts = [];
 
   const gen = parseInt(document.getElementById('curso-select').value);
   const curso = CURSOS.find(c => c.gen === gen);
@@ -1252,6 +1256,7 @@ function renderCurso() {
   </div>
 
   <div id="curso-dia-card">${buildDiaCurso(curso)}</div>
+  <div id="curso-tray-card"></div>
   `;
 
   document.getElementById('curso-content').innerHTML = html;
@@ -1264,6 +1269,7 @@ function renderCurso() {
   _cursoSearch = '';
   _renderResumen();
   renderCursoTable(students, active_cols);
+  buildDiaSepaTrayCurso(curso, students);
 }
 
 function buildRiskCard(s, lv, year, active_cols) {
@@ -1367,7 +1373,7 @@ function _renderResumen() {
     const pctCol  = pctAp >= 90 ? 'var(--green)' : pctAp >= 80 ? 'var(--yellow)' : 'var(--red)';
     const promCol = !col.prom ? '' : col.prom < 4 ? 'var(--red)' : col.prom < 5 ? 'var(--yellow)' : col.prom < 6 ? 'var(--accent)' : 'var(--green)';
     const pct = n => col.n ? `<span style="font-size:10px;color:var(--muted)">(${(n/col.n*100).toFixed(0)}%)</span>` : '';
-    return `<tr>
+    return `<tr style="cursor:pointer" onclick="openSubjPanel('${col.key}')">
       <td style="font-weight:600">${col.label}<span style="font-size:10px;color:var(--muted)">${typeLabel[col.type]||''}</span></td>
       <td>${col.n}</td>
       <td style="color:${promCol};font-weight:600">${col.prom ? col.prom.toFixed(1) : '—'}</td>
@@ -1401,6 +1407,64 @@ function _renderResumen() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+  </div>
+  <div class="table-note" style="margin-top:4px">Clic en una asignatura para ver el detalle de notas por estudiante</div>
+  <div id="curso-subj-panel"></div>`;
+}
+
+function openSubjPanel(key) {
+  const panel = document.getElementById('curso-subj-panel');
+  if(!panel) return;
+  if(panel.dataset.open === key) { panel.innerHTML = ''; panel.dataset.open = ''; return; }
+  panel.dataset.open = key;
+
+  const stat = (window._cursoSubjStats ?? []).find(c => c.key === key);
+  if(!stat) return;
+
+  const students = window._cursoStudents ?? [];
+  const listed = students.map(s => ({
+    nombre: s.nombre, key: s.key,
+    v: s.napsis[CUR_YEAR]?.asignaturas?.[key] ?? null
+  }));
+
+  const rows = listed.map(r => {
+    const cls = r.v == null ? 'var(--muted)' : r.v < 4 ? 'var(--red)' : r.v < 5 ? 'var(--yellow)' : r.v < 6 ? 'var(--accent)' : 'var(--green)';
+    return `<tr>
+      <td style="cursor:pointer;font-weight:500" onclick="openStudent('${r.key}')">${r.nombre}</td>
+      <td style="font-weight:700;color:${cls};font-family:var(--mono)">${r.v != null ? r.v.toFixed(1) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const bars = [
+    {label:'Bajo 4.0', n:stat.r39, color:'var(--red)'},
+    {label:'4.0–4.9',  n:stat.r49, color:'var(--yellow)'},
+    {label:'5.0–5.9',  n:stat.r59, color:'var(--accent)'},
+    {label:'6.0–7.0',  n:stat.r70, color:'var(--green)'},
+  ].map(b => {
+    const pct = stat.n ? (b.n / stat.n * 100) : 0;
+    return `<div class="dia-bar-row">
+      <span class="dia-bar-label">${b.label}</span>
+      <div class="dia-bar-outer"><div class="dia-bar-fill" style="width:${pct}%;background:${b.color}"></div></div>
+      <span class="dia-val" style="color:${b.color}">${b.n} (${pct.toFixed(0)}%)</span>
+    </div>`;
+  }).join('');
+
+  const conNota = listed.filter(r => r.v != null).length;
+  panel.innerHTML = `<div class="card mb24" style="margin-top:12px">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      ${stat.label}
+      <button class="dia-toggle" onclick="openSubjPanel('${key}')" style="font-size:11px;padding:4px 10px">✕ Cerrar</button>
+    </div>
+    <div class="g2">
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Estudiantes · ${conNota} con nota</div>
+        <table class="subj-table" style="font-size:12px;width:100%"><tbody>${rows}</tbody></table>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Distribución</div>
+        <div class="dia-bar-wrap">${bars}</div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -1484,6 +1548,58 @@ function searchStudent(q) {
   }).join('');
 }
 
+function _renderSubjComparativo(student, chips) {
+  const el = document.getElementById('est-subj-comp');
+  if(!el) return;
+  if(chips.length !== 1) { el.innerHTML = ''; return; }
+
+  const colKey = chips[0];
+  const colLabel = Object.values(student.napsis)
+    .flatMap(nd => nd.col_map ?? [])
+    .find(c => c.key === colKey)?.label ?? colKey;
+
+  const years = Object.keys(student.napsis).map(Number).sort();
+  const dataRows = years.map(yr => {
+    const nd = student.napsis[yr];
+    const stuVal = nd?.asignaturas?.[colKey] ?? null;
+    const peers = EST.filter(s2 => s2.gen === student.gen && s2.napsis[yr]?.asignaturas?.[colKey] != null);
+    const prom = peers.length
+      ? peers.reduce((acc, s2) => acc + s2.napsis[yr].asignaturas[colKey], 0) / peers.length
+      : null;
+    return { yr, stuVal, prom, n: peers.length };
+  }).filter(r => r.stuVal !== null || r.prom !== null);
+
+  if(!dataRows.length) { el.innerHTML = ''; return; }
+
+  const rows = dataRows.map(r => {
+    const sc = r.stuVal == null ? 'var(--muted)' : r.stuVal < 4 ? 'var(--red)' : r.stuVal < 5 ? 'var(--yellow)' : r.stuVal < 6 ? 'var(--accent)' : 'var(--green)';
+    const pc = r.prom == null ? 'var(--muted)' : r.prom < 4 ? 'var(--red)' : r.prom < 5 ? 'var(--yellow)' : r.prom < 6 ? 'var(--accent)' : 'var(--green)';
+    const diff = (r.stuVal != null && r.prom != null) ? (r.stuVal - r.prom) : null;
+    const diffStr = diff == null ? '—' : (diff >= 0 ? '+' : '') + diff.toFixed(1);
+    const diffCol = diff == null ? 'var(--muted)' : diff >= 0 ? 'var(--green)' : 'var(--red)';
+    return `<tr>
+      <td style="font-family:var(--mono);font-weight:600">${r.yr}</td>
+      <td style="font-weight:700;color:${sc};font-family:var(--mono)">${r.stuVal != null ? r.stuVal.toFixed(1) : '—'}</td>
+      <td style="color:${pc};font-family:var(--mono)">${r.prom != null ? r.prom.toFixed(1) : '—'} <span style="font-size:10px;color:var(--muted)">(n=${r.n})</span></td>
+      <td style="color:${diffCol};font-family:var(--mono);font-weight:600">${diffStr}</td>
+    </tr>`;
+  }).join('');
+
+  const firstName = student.nombre.split(' ')[0];
+  el.innerHTML = `<div class="card mb24">
+    <div class="card-title">${colLabel} · Estudiante vs. promedio del curso</div>
+    <table class="subj-table" style="font-size:12px">
+      <thead><tr>
+        <th style="text-align:left">Año</th>
+        <th>${firstName}</th>
+        <th>Prom. curso</th>
+        <th>Diferencia</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
 function openStudent(key) {
   _estCharts.forEach(ch=>ch.destroy());
   _estCharts = [];
@@ -1557,7 +1673,8 @@ function openStudent(key) {
         <tbody id="est-asig-tbody"></tbody>
       </table>
     </div>
-  </div>`;
+  </div>
+  <div id="est-subj-comp"></div>`;
 
   // ── Trayectoria de Asistencia ─────────────────────────────
   const asistYears = napYears.filter(y => y >= 2022 && s.napsis[y]?.asistencia != null);
@@ -1843,6 +1960,7 @@ function openStudent(key) {
         chip.style.opacity      = show ? '1' : '0.45';
       });
       ch_asig.update();
+      _renderSubjComparativo(s, show ? _napSubjList.map(cc => cc.key) : []);
     };
     const _mkCtrlBtn = (lbl, fn, active) => {
       const b = document.createElement('button');
@@ -1876,6 +1994,8 @@ function openStudent(key) {
           chip.style.background = meta.hidden ? 'transparent' : c + '22';
           chip.style.opacity    = meta.hidden ? '0.45' : '1';
           ch_asig.update();
+          const activeCols = _napSubjList.filter((_, ii) => !ch_asig.getDatasetMeta(ii).hidden);
+          _renderSubjComparativo(s, activeCols.map(cc => cc.key));
         };
       })();
       _filtersEl.appendChild(chip);
