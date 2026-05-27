@@ -1546,7 +1546,7 @@ function openStudent(key) {
   </div>`;
 
   // ── Trayectoria de Asistencia ─────────────────────────────
-  const asistYears = napYears.filter(y => s.napsis[y]?.asistencia != null);
+  const asistYears = napYears.filter(y => y >= 2022 && s.napsis[y]?.asistencia != null);
   if(asistYears.length) {
     const _asistCol = v => v>=85 ? 'var(--green)' : v>=75 ? 'var(--yellow)' : 'var(--red)';
     html += `<div class="card mb24">
@@ -2242,7 +2242,7 @@ function printEstudiante() {
       <tbody>${napRows}</tbody>
     </table>
     ${(()=>{
-      const aYrs = napYears.filter(y=>s.napsis[y]?.asistencia!=null);
+      const aYrs = napYears.filter(y=>y>=2022 && s.napsis[y]?.asistencia!=null);
       if(!aYrs.length) return '';
       const _ac = v => v>=85?'#27ae60':v>=75?'#b7770d':'#c0392b';
       const cells = aYrs.map(y=>{
