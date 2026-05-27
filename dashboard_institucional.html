@@ -205,6 +205,7 @@
   <button onclick="showTab('cursos',this)">Cursos</button>
   <button onclick="showTab('estudiantes',this)">Estudiantes</button>
   <button onclick="showTab('seguimiento',this)">Seguimiento</button>
+  <button onclick="showTab('asignaturas',this)">Asignaturas</button>
   <button onclick="showTab('evst',this)">Evaluaciones estand.</button>
 </nav>
 
@@ -263,6 +264,28 @@
   </div>
   <div id="seg-resumen-view"></div>
   <div id="seg-detalle-view" style="display:none"></div>
+</div>
+
+<!-- ══════════════════ ASIGNATURAS ══════════════════ -->
+<div class="tab-content" id="tab-asignaturas">
+  <div class="card mb24">
+    <div class="card-title">Notas por asignatura</div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Curso</label>
+        <select id="asig-curso-select" class="curso-select" style="min-width:160px" onchange="onAsigCursoChange()">
+          <option value="">— Seleccionar curso —</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Asignatura</label>
+        <select id="asig-subj-select" class="curso-select" style="min-width:220px" onchange="renderAsignaturas()" disabled>
+          <option value="">— Seleccionar asignatura —</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div id="asig-content"></div>
 </div>
 
 <!-- ══════════════════ EVALUACIONES ESTANDARIZADAS ══════════════════ -->
@@ -333,10 +356,11 @@ function showTab(id, btn) {
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
-  if(id==='colegio'     && !window._colegioDrawn) { renderColegio();     window._colegioDrawn=true; }
-  if(id==='cursos'      && !window._cursosInit)   { initCursos();       window._cursosInit=true; }
-  if(id==='seguimiento' && !window._segInit)       { renderSeguimiento(); window._segInit=true; }
-  if(id==='evst'        && !window._evstInit)      { switchEvstTab('dia'); window._evstInit=true; }
+  if(id==='colegio'      && !window._colegioDrawn) { renderColegio();     window._colegioDrawn=true; }
+  if(id==='cursos'       && !window._cursosInit)   { initCursos();       window._cursosInit=true; }
+  if(id==='seguimiento'  && !window._segInit)       { renderSeguimiento(); window._segInit=true; }
+  if(id==='asignaturas'  && !window._asigInit)      { initAsignaturas();  window._asigInit=true; }
+  if(id==='evst'         && !window._evstInit)      { switchEvstTab('dia'); window._evstInit=true; }
 }
 function goToCurso(gen) {
   showTab('cursos', document.querySelector('nav button:nth-child(2)'));
@@ -1034,7 +1058,6 @@ function napToggle(view) {
   asig.style.display = view === 'asig' ? '' : 'none';
   btnP.classList.toggle('active', view === 'prom');
   btnA.classList.toggle('active', view === 'asig');
-  if(view === 'prom') { const el = document.getElementById('est-subj-comp'); if(el) el.innerHTML = ''; }
 }
 
 function renderDiaBars(containerId, materia) {
@@ -1136,6 +1159,130 @@ function initCursos() {
     sel.appendChild(opt);
   });
   renderCurso();
+}
+
+// ════════════════════════════════════════════════════════════
+// PESTAÑA ASIGNATURAS
+// ════════════════════════════════════════════════════════════
+function initAsignaturas() {
+  const sel = document.getElementById('asig-curso-select');
+  CURSOS.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.gen;
+    opt.textContent = `${c.grade_name} — Gen. ${c.gen}`;
+    sel.appendChild(opt);
+  });
+}
+
+function onAsigCursoChange() {
+  const gen = parseInt(document.getElementById('asig-curso-select').value);
+  const subjSel = document.getElementById('asig-subj-select');
+  subjSel.innerHTML = '<option value="">— Seleccionar asignatura —</option>';
+  document.getElementById('asig-content').innerHTML = '';
+  if(!gen) { subjSel.disabled = true; return; }
+
+  const students = EST.filter(s => s.gen === gen && s.napsis[CUR_YEAR]);
+  const colMap = students[0]?.napsis[CUR_YEAR]?.col_map ?? [];
+  const activeCols = colMap.filter(c => !c.np && students.some(s => s.napsis[CUR_YEAR]?.asignaturas?.[c.key] != null));
+
+  activeCols.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.key;
+    opt.textContent = c.label;
+    subjSel.appendChild(opt);
+  });
+  subjSel.disabled = activeCols.length === 0;
+}
+
+function renderAsignaturas() {
+  const gen    = parseInt(document.getElementById('asig-curso-select').value);
+  const colKey = document.getElementById('asig-subj-select').value;
+  const cont   = document.getElementById('asig-content');
+  if(!gen || !colKey) { cont.innerHTML = ''; return; }
+
+  const curso    = CURSOS.find(c => c.gen === gen);
+  const students = EST.filter(s => s.gen === gen && s.napsis[CUR_YEAR])
+                      .sort((a,b) => a.nombre.localeCompare(b.nombre));
+  const colLabel = students[0]?.napsis[CUR_YEAR]?.col_map?.find(c => c.key === colKey)?.label ?? colKey;
+
+  const nc  = v => v == null ? '' : v < 4 ? 'cr' : v < 5 ? 'cy' : v < 6 ? 'ca' : 'cg';
+  const ns2 = v => v == null ? '—' : v.toFixed(1);
+
+  // Obtener estructura de evaluaciones desde el primer alumno que tenga datos
+  const sampleEv = students.find(s => s.napsis[CUR_YEAR]?.evals?.[colKey])?.napsis[CUR_YEAR]?.evals?.[colKey];
+  const sem1Names = sampleEv ? sampleEv['1'].map(e => e.name) : [];
+  const sem2Names = sampleEv ? sampleEv['2'].map(e => e.name) : [];
+  const hasEvals  = sem1Names.length > 0 || sem2Names.length > 0;
+
+  // Construir cabecera
+  const sepStyle = 'border-left:2px solid var(--border)';
+  let thSem1 = sem1Names.map((n,i) => `<th title="${n}" style="${i===0?sepStyle:''}">${n}</th>`).join('');
+  let thSem2 = sem2Names.map((n,i) => `<th title="${n}" style="${i===0?sepStyle:''}">${n}</th>`).join('');
+  const thFinal = `<th style="${sepStyle}">Nota Final</th>`;
+
+  const thead = `<tr>
+    <th style="text-align:left;min-width:180px">Estudiante</th>
+    ${thSem1 ? `<th colspan="${sem1Names.length}" style="text-align:center;${sepStyle}">1° Semestre</th>` : ''}
+    ${thSem2 ? `<th colspan="${sem2Names.length}" style="text-align:center;${sepStyle}">2° Semestre</th>` : ''}
+    ${thFinal}
+  </tr><tr>
+    <th></th>
+    ${thSem1}${thSem2}${thFinal}
+  </tr>`;
+
+  // Construir filas
+  const tbody = students.map(s => {
+    const nd = s.napsis[CUR_YEAR];
+    const ev = nd?.evals?.[colKey];
+    const finalGrade = nd?.asignaturas?.[colKey] ?? null;
+
+    const cellsSem1 = sem1Names.map((n,i) => {
+      const entry = ev?.['1']?.find(e => e.name === n);
+      const v = entry?.grade ?? null;
+      const isProm = n === 'Promedio sem.';
+      return `<td class="${nc(v)}" style="${i===0?sepStyle:''};font-style:${isProm?'italic':'normal'}">${ns2(v)}</td>`;
+    }).join('');
+
+    const cellsSem2 = sem2Names.map((n,i) => {
+      const entry = ev?.['2']?.find(e => e.name === n);
+      const v = entry?.grade ?? null;
+      const isProm = n === 'Promedio sem.';
+      return `<td class="${nc(v)}" style="${i===0?sepStyle:''};font-style:${isProm?'italic':'normal'}">${ns2(v)}</td>`;
+    }).join('');
+
+    return `<tr onclick="openStudent('${s.key}')" style="cursor:pointer">
+      <td style="font-weight:500">${s.nombre}</td>
+      ${cellsSem1}${cellsSem2}
+      <td class="${nc(finalGrade)} pf-cell" style="${sepStyle};font-weight:700">${ns2(finalGrade)}</td>
+    </tr>`;
+  }).join('');
+
+  // Estadísticas de la asignatura
+  const finals = students.map(s => s.napsis[CUR_YEAR]?.asignaturas?.[colKey]).filter(v => v != null);
+  const prom   = finals.length ? (finals.reduce((a,b)=>a+b,0)/finals.length).toFixed(2) : '—';
+  const repro  = finals.filter(v=>v<4).length;
+  const aprob  = finals.filter(v=>v>=4).length;
+  const pctAp  = finals.length ? (aprob/finals.length*100).toFixed(0)+'%' : '—';
+
+  cont.innerHTML = `
+  <div class="kpi-row" style="margin-bottom:16px">
+    <div class="kpi"><div class="value ca">${students.length}</div><div class="desc">Estudiantes</div></div>
+    <div class="kpi"><div class="value ${nc(parseFloat(prom))}">${prom}</div><div class="desc">Promedio</div></div>
+    <div class="kpi"><div class="value cr">${repro}</div><div class="desc">Reprobados</div></div>
+    <div class="kpi"><div class="value cg">${aprob}</div><div class="desc">Aprobados (${pctAp})</div></div>
+  </div>
+  <div class="card mb24">
+    <div class="card-title">${colLabel} · ${curso?.grade_name ?? ''} · ${CUR_YEAR}
+      ${!hasEvals ? '<span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:8px">— solo nota final disponible</span>' : ''}
+    </div>
+    <div style="overflow-x:auto">
+      <table class="std-table">
+        <thead>${thead}</thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>
+    <div class="table-note">Clic en un estudiante para ver su perfil · — sin nota registrada · cursiva = promedio semestral</div>
+  </div>`;
 }
 
 let _cursoCharts = [];
@@ -1724,70 +1871,6 @@ function searchStudent(q) {
   }).join('');
 }
 
-function _renderEvaluaciones(student, chips) {
-  const el = document.getElementById('est-subj-comp');
-  if(!el) return;
-  if(chips.length !== 1) { el.innerHTML = ''; return; }
-
-  const colKey = chips[0];
-  const colLabel = Object.values(student.napsis)
-    .flatMap(nd => nd.col_map ?? [])
-    .find(c => c.key === colKey)?.label ?? colKey;
-
-  const years = Object.keys(student.napsis).map(Number).sort();
-
-  const nc = v => v == null ? '' : v < 4 ? 'cr' : v < 5 ? 'cy' : v < 6 ? 'ca' : 'cg';
-  const ns2 = v => v == null ? '—' : v.toFixed(1);
-
-  const _semTable = evals => {
-    if(!evals || !evals.length) return '<span style="color:var(--muted);font-size:11px;font-style:italic">Sin evaluaciones</span>';
-    return `<table style="font-size:11px;width:100%;border-collapse:collapse">` +
-      evals.map(e => {
-        const cls = nc(e.grade);
-        const isProm = e.name === 'Promedio sem.';
-        return `<tr style="${isProm ? 'border-top:1px solid var(--border);font-style:italic' : ''}">
-          <td style="padding:1px 8px 1px 0;color:var(--muted)">${e.name}</td>
-          <td style="font-family:var(--mono);font-weight:${isProm ? 600 : 400}" class="${cls}">${ns2(e.grade)}</td>
-        </tr>`;
-      }).join('') + '</table>';
-  };
-
-  const yearBlocks = years.map(yr => {
-    const nd = student.napsis[yr];
-    if(!nd) return '';
-    const evData = nd.evals?.[colKey];
-    const finalGrade = nd.asignaturas?.[colKey] ?? null;
-    if(!evData && finalGrade == null) return '';
-
-    const sem1 = evData ? _semTable(evData['1']) : '<span style="color:var(--muted);font-size:11px;font-style:italic">Sin datos</span>';
-    const sem2 = evData ? _semTable(evData['2']) : '<span style="color:var(--muted);font-size:11px;font-style:italic">Sin datos</span>';
-    const fCls = nc(finalGrade);
-
-    return `<div style="margin-bottom:20px">
-      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">
-        ${yr} · ${nd.grade_name}
-        <span style="float:right;font-size:13px;font-family:var(--mono);font-weight:700;letter-spacing:0;text-transform:none" class="${fCls}">Nota final: ${ns2(finalGrade)}</span>
-      </div>
-      <div class="g2" style="gap:12px">
-        <div>
-          <div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">1° Semestre</div>
-          ${sem1}
-        </div>
-        <div>
-          <div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">2° Semestre</div>
-          ${sem2}
-        </div>
-      </div>
-    </div>`;
-  }).filter(Boolean).join('');
-
-  if(!yearBlocks) { el.innerHTML = ''; return; }
-
-  el.innerHTML = `<div class="card mb24">
-    <div class="card-title">${colLabel} · Evaluaciones por año</div>
-    ${yearBlocks}
-  </div>`;
-}
 
 function openStudent(key) {
   _estCharts.forEach(ch=>ch.destroy());
@@ -1862,8 +1945,7 @@ function openStudent(key) {
         <tbody id="est-asig-tbody"></tbody>
       </table>
     </div>
-  </div>
-  <div id="est-subj-comp"></div>`;
+  </div>`;
 
   // ── Trayectoria de Asistencia ─────────────────────────────
   const asistYears = napYears.filter(y => y >= 2022 && s.napsis[y]?.asistencia != null);
@@ -2149,7 +2231,6 @@ function openStudent(key) {
         chip.style.opacity      = show ? '1' : '0.45';
       });
       ch_asig.update();
-      _renderEvaluaciones(s, show ? _napSubjList.map(cc => cc.key) : []);
     };
     const _mkCtrlBtn = (lbl, fn, active) => {
       const b = document.createElement('button');
@@ -2183,8 +2264,6 @@ function openStudent(key) {
           chip.style.background = meta.hidden ? 'transparent' : c + '22';
           chip.style.opacity    = meta.hidden ? '0.45' : '1';
           ch_asig.update();
-          const activeCols = _napSubjList.filter((_, ii) => !ch_asig.getDatasetMeta(ii).hidden);
-          _renderEvaluaciones(s, activeCols.map(cc => cc.key));
         };
       })();
       _filtersEl.appendChild(chip);
