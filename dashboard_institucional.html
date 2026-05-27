@@ -205,6 +205,7 @@
   <button onclick="showTab('cursos',this)">Cursos</button>
   <button onclick="showTab('estudiantes',this)">Estudiantes</button>
   <button onclick="showTab('seguimiento',this)">Seguimiento</button>
+  <button onclick="showTab('evst',this)">Evaluaciones estand.</button>
 </nav>
 
 <main>
@@ -261,6 +262,18 @@
   </div>
   <div id="seg-resumen-view"></div>
   <div id="seg-detalle-view" style="display:none"></div>
+</div>
+
+<!-- ══════════════════ EVALUACIONES ESTANDARIZADAS ══════════════════ -->
+<div class="tab-content" id="tab-evst">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+    <button class="filter-btn active" id="btn-evst-dia"  onclick="switchEvstTab('dia')">DIA</button>
+    <button class="filter-btn"        id="btn-evst-sepa" onclick="switchEvstTab('sepa')">SEPA</button>
+    <button class="filter-btn"        id="btn-evst-paes" onclick="switchEvstTab('paes')">PAES</button>
+  </div>
+  <div id="tab-evst-dia"></div>
+  <div id="tab-evst-sepa" style="display:none"></div>
+  <div id="tab-evst-paes" style="display:none"></div>
 </div>
 
 </main>
@@ -322,6 +335,7 @@ function showTab(id, btn) {
   if(id==='colegio'     && !window._colegioDrawn) { renderColegio();     window._colegioDrawn=true; }
   if(id==='cursos'      && !window._cursosInit)   { initCursos();       window._cursosInit=true; }
   if(id==='seguimiento' && !window._segInit)       { renderSeguimiento(); window._segInit=true; }
+  if(id==='evst'        && !window._evstInit)      { switchEvstTab('dia'); window._evstInit=true; }
 }
 function goToCurso(gen) {
   showTab('cursos', document.querySelector('nav button:nth-child(2)'));
@@ -2262,6 +2276,356 @@ function printEstudiante() {
     <script>window.onload=function(){window.print()};<\/script>
   </body></html>`);
   win.document.close();
+}
+
+// ════════════════════════════════════════════════════════════
+// PESTAÑA EVALUACIONES ESTANDARIZADAS
+// ════════════════════════════════════════════════════════════
+let _evstTab = 'dia';
+
+function switchEvstTab(tab) {
+  _evstTab = tab;
+  ['dia','sepa','paes'].forEach(t => {
+    const el  = document.getElementById('tab-evst-' + t);
+    const btn = document.getElementById('btn-evst-' + t);
+    if(el)  el.style.display = t === tab ? '' : 'none';
+    if(btn) btn.classList.toggle('active', t === tab);
+  });
+  if(tab === 'dia'  && !window._evstDiaDone)  { renderEvstDia();  window._evstDiaDone  = true; }
+  if(tab === 'sepa' && !window._evstSepaDone) { renderEvstSepa(); window._evstSepaDone = true; }
+  if(tab === 'paes' && !window._evstPaesDone) { renderEvstPaes(); window._evstPaesDone = true; }
+}
+
+// ── DIA ────────────────────────────────────────────────────
+function renderEvstDia() {
+  const container = document.getElementById('tab-evst-dia');
+  const hasAny = CURSOS.some(c => c.dia && Object.keys(c.dia).length > 0);
+  if(!hasAny) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos DIA disponibles.</p>';
+    return;
+  }
+
+  function avgEjes(ejesObj) {
+    if(!ejesObj) return null;
+    const vals = Object.values(ejesObj).filter(v => v !== null && v !== undefined);
+    return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : null;
+  }
+  function diaCell(val) {
+    if(val === null) return '<td style="text-align:center;color:var(--muted)">–</td>';
+    const col = diaColor(val);
+    return `<td style="text-align:center;color:${col};font-weight:600;font-family:var(--mono)">${val.toFixed(1)}%</td>`;
+  }
+
+  const colHeaders = _DIA_PERIODO_KEYS.map(p =>
+    `<th colspan="2" style="text-align:center;padding:6px 10px;border-bottom:2px solid var(--border)">${_DIA_PERIODO_LABELS[p]}</th>`
+  ).join('');
+  const subHeaders = _DIA_PERIODO_KEYS.map(() =>
+    '<th style="text-align:center;font-weight:400;font-size:10px;color:var(--muted);padding:4px 8px">Lect.</th>' +
+    '<th style="text-align:center;font-weight:400;font-size:10px;color:var(--muted);padding:4px 8px">Mat.</th>'
+  ).join('');
+  const tableRows = CURSOS.map(c =>
+    `<tr>
+      <td><strong style="color:var(--accent)">${c.grade_name}</strong></td>
+      ${_DIA_PERIODO_KEYS.map(p =>
+        diaCell(avgEjes(c.dia?.[p]?.lectura)) + diaCell(avgEjes(c.dia?.[p]?.matematica))
+      ).join('')}
+    </tr>`
+  ).join('');
+
+  let html = `
+    <div class="card mb24">
+      <div class="card-title">DIA · Resumen por Curso · ${CUR_YEAR}</div>
+      <div style="overflow-x:auto">
+        <table class="summary-table">
+          <thead>
+            <tr><th style="text-align:left">Curso</th>${colHeaders}</tr>
+            <tr><th></th>${subHeaders}</tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  html += CURSOS.map(c => {
+    const hasDia = c.dia && _DIA_PERIODO_KEYS.some(p =>
+      (c.dia[p]?.lectura    && Object.keys(c.dia[p].lectura).length) ||
+      (c.dia[p]?.matematica && Object.keys(c.dia[p].matematica).length)
+    );
+    if(!hasDia) return '';
+    return `
+      <div class="card mb24">
+        <div class="card-title">DIA · ${c.grade_name} · detalle por ejes</div>
+        <div class="g2">
+          <div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Lectura</div>
+            <div id="evst-dia-lect-${c.gen}"></div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>
+            <div id="evst-dia-mat-${c.gen}"></div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+
+  CURSOS.forEach(c => {
+    _renderEvstDiaCourse(`evst-dia-lect-${c.gen}`, c, 'lectura');
+    _renderEvstDiaCourse(`evst-dia-mat-${c.gen}`,  c, 'matematica');
+  });
+}
+
+function _renderEvstDiaCourse(containerId, c, materia) {
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const activePeriodos = _DIA_PERIODO_KEYS.filter(p =>
+    c.dia?.[p]?.[materia] && Object.keys(c.dia[p][materia]).length
+  );
+  if(!activePeriodos.length) {
+    container.innerHTML = '<span style="color:var(--muted);font-size:12px">Sin datos</span>';
+    return;
+  }
+  let html = '';
+  activePeriodos.forEach(pkey => {
+    html += `<div style="font-size:9px;font-family:var(--mono);color:var(--muted);
+      text-transform:uppercase;letter-spacing:1px;margin:8px 0 3px">${_DIA_PERIODO_LABELS[pkey]}</div>`;
+    Object.entries(c.dia[pkey][materia]).forEach(([eje, val]) => {
+      const col = diaColor(val);
+      html += `<div class="dia-bar-row">
+        <span class="dia-bar-label" style="min-width:130px;max-width:160px;width:auto">${eje}</span>
+        <div class="dia-bar-outer">
+          <div class="dia-bar-fill" style="width:${val}%;background:${col}"></div>
+        </div>
+        <span class="dia-val" style="color:${col}">${val}%</span>
+      </div>`;
+    });
+  });
+  container.innerHTML = html;
+}
+
+// ── SEPA ───────────────────────────────────────────────────
+function renderEvstSepa() {
+  const container = document.getElementById('tab-evst-sepa');
+
+  // Agrupar por gen, acumular puntajes por período
+  const sepaByGen = {};
+  EST.forEach(s => {
+    if(!s.sepa) return;
+    const hasL = Object.keys(s.sepa.lenguaje   ?? {}).length > 0;
+    const hasM = Object.keys(s.sepa.matematica ?? {}).length > 0;
+    if(!hasL && !hasM) return;
+    if(!sepaByGen[s.gen]) sepaByGen[s.gen] = { lenguaje: {}, matematica: {}, n: 0 };
+    sepaByGen[s.gen].n++;
+    ['lenguaje','matematica'].forEach(mat => {
+      Object.entries(s.sepa[mat] ?? {}).forEach(([k, v]) => {
+        if(!sepaByGen[s.gen][mat][k]) sepaByGen[s.gen][mat][k] = [];
+        sepaByGen[s.gen][mat][k].push(v);
+      });
+    });
+  });
+
+  const cursosConSepa = CURSOS.filter(c => sepaByGen[c.gen]);
+  if(!cursosConSepa.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos SEPA disponibles.</p>';
+    return;
+  }
+
+  function avgList(arr) { return arr.reduce((a,b) => a+b, 0) / arr.length; }
+  function sepaSort(entries) {
+    return entries.sort((a,b) => {
+      const ka = a[0].replace(/_P$/, '_0').replace(/_F$/, '_1');
+      const kb = b[0].replace(/_P$/, '_0').replace(/_F$/, '_1');
+      return ka.localeCompare(kb);
+    });
+  }
+  function sepaLabel(k) {
+    const parts = k.split('_');
+    const sfx = parts.pop();
+    return `${parts.join('_')} (${sfx === 'P' ? 'inicio' : 'fin'})`;
+  }
+
+  let html = '';
+  cursosConSepa.forEach(c => {
+    const d    = sepaByGen[c.gen];
+    const hasL = Object.keys(d.lenguaje).length   > 0;
+    const hasM = Object.keys(d.matematica).length > 0;
+    html += `
+      <div class="card mb24">
+        <div class="card-title">SEPA · ${c.grade_name}
+          <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">N = ${d.n} estudiantes con datos</span>
+        </div>
+        <div class="g2">
+          ${hasL ? `<div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Lenguaje</div>
+            <div style="height:180px"><canvas id="evst-sepa-leng-${c.gen}"></canvas></div>
+          </div>` : '<div></div>'}
+          ${hasM ? `<div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>
+            <div style="height:180px"><canvas id="evst-sepa-mat-${c.gen}"></canvas></div>
+          </div>` : '<div></div>'}
+        </div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+
+  const sepaChartOpts = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color:'#5a7a96', font:{ family:'IBM Plex Mono', size:9 }, maxRotation:30 },
+             grid: { color:'rgba(184,208,232,.4)' } },
+      y: { min: 450, max: 850,
+             ticks: { color:'#5a7a96', font:{ family:'IBM Plex Mono', size:9 } },
+             grid: { color:'rgba(184,208,232,.4)' } },
+    },
+  };
+
+  cursosConSepa.forEach(c => {
+    const d = sepaByGen[c.gen];
+    [['leng','lenguaje'],['mat','matematica']].forEach(([sfx, mat]) => {
+      const raw = d[mat];
+      if(!Object.keys(raw).length) return;
+      const sorted = sepaSort(Object.entries(raw));
+      const labels = sorted.map(([k]) => sepaLabel(k));
+      const vals   = sorted.map(([, arr]) => Math.round(avgList(arr)));
+      new Chart(document.getElementById(`evst-sepa-${sfx}-${c.gen}`), {
+        type: 'line',
+        data: { labels, datasets: [{ data: vals, borderColor:'#1a5276',
+          backgroundColor:'#1a527622', borderWidth:2, pointRadius:4, tension:0.3 }] },
+        options: sepaChartOpts,
+      });
+    });
+  });
+}
+
+// ── PAES ───────────────────────────────────────────────────
+function renderEvstPaes() {
+  const container = document.getElementById('tab-evst-paes');
+
+  // Agrupar por gen
+  const jegByGen = {};
+  EST.forEach(s => {
+    if(!s.jeg) return;
+    const hasCL = Object.keys(s.jeg.cl ?? {}).length > 0;
+    const hasMA = Object.keys(s.jeg.ma ?? {}).length > 0;
+    if(!hasCL && !hasMA) return;
+    if(!jegByGen[s.gen]) jegByGen[s.gen] = { cl: {}, ma: {}, students: [] };
+    jegByGen[s.gen].students.push(s);
+    ['cl','ma'].forEach(area => {
+      Object.entries(s.jeg[area] ?? {}).forEach(([k, v]) => {
+        if(!jegByGen[s.gen][area][k]) jegByGen[s.gen][area][k] = [];
+        jegByGen[s.gen][area][k].push({ key: s.key, val: v });
+      });
+    });
+  });
+
+  const cursosConJeg = CURSOS.filter(c => jegByGen[c.gen]);
+  if(!cursosConJeg.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos de ensayos JEG cargados.</p>';
+    return;
+  }
+
+  function avgItems(items) { return items.reduce((a,b) => a+b.val, 0) / items.length; }
+
+  let html = '';
+  cursosConJeg.forEach(c => {
+    const d         = jegByGen[c.gen];
+    const nTotal    = c.vigentes ?? d.students.length;
+    const nWithData = d.students.length;
+    const hasCL     = Object.keys(d.cl).length > 0;
+    const hasMA     = Object.keys(d.ma).length > 0;
+    const allEnsayos = [...new Set([...Object.keys(d.cl), ...Object.keys(d.ma)])].sort();
+
+    const tableRows = d.students
+      .sort((a,b) => a.nombre.localeCompare(b.nombre))
+      .map(s => {
+        const cells = allEnsayos.map(e => {
+          const cl = s.jeg?.cl?.[e] ?? null;
+          const ma = s.jeg?.ma?.[e] ?? null;
+          return `<td style="text-align:center;font-family:var(--mono)">${cl ?? '–'}</td>` +
+                 `<td style="text-align:center;font-family:var(--mono)">${ma ?? '–'}</td>`;
+        }).join('');
+        return `<tr>
+          <td><a href="#" onclick="openStudent('${s.key}');showTab('estudiantes',document.querySelector('nav button:nth-child(3)'));return false"
+            style="color:var(--accent);text-decoration:none">${s.nombre}</a></td>
+          ${cells}
+        </tr>`;
+      }).join('');
+
+    html += `
+      <div class="card mb24">
+        <div class="card-title">PAES Ensayos JEG · ${c.grade_name}
+          <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">N = ${nWithData} / ${nTotal} estudiantes</span>
+        </div>
+        <div class="g2">
+          ${hasCL ? `<div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Comprensión Lectora</div>
+            <div style="height:180px"><canvas id="evst-jeg-cl-${c.gen}"></canvas></div>
+          </div>` : '<div></div>'}
+          ${hasMA ? `<div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>
+            <div style="height:180px"><canvas id="evst-jeg-ma-${c.gen}"></canvas></div>
+          </div>` : '<div></div>'}
+        </div>
+        <div style="margin-top:16px;overflow-x:auto">
+          <table class="summary-table" style="font-size:11px">
+            <thead>
+              <tr>
+                <th style="text-align:left">Estudiante</th>
+                ${allEnsayos.map(e => `<th colspan="2" style="text-align:center">${e}</th>`).join('')}
+              </tr>
+              <tr>
+                <th></th>
+                ${allEnsayos.map(() =>
+                  '<th style="text-align:center;font-weight:400;color:var(--muted);font-size:9px">CL</th>' +
+                  '<th style="text-align:center;font-weight:400;color:var(--muted);font-size:9px">MA</th>'
+                ).join('')}
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+
+  const jegChartOpts = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color:'#5a7a96', font:{ family:'IBM Plex Mono', size:9 }, maxRotation:30 },
+             grid: { color:'rgba(184,208,232,.4)' } },
+      y: { min: 150, max: 1000,
+             ticks: { color:'#5a7a96', font:{ family:'IBM Plex Mono', size:9 } },
+             grid: { color:'rgba(184,208,232,.4)' } },
+    },
+  };
+
+  cursosConJeg.forEach(c => {
+    const d = jegByGen[c.gen];
+    [['cl','cl'],['ma','ma']].forEach(([sfx, area]) => {
+      const raw = d[area];
+      if(!Object.keys(raw).length) return;
+      const sorted = Object.entries(raw).sort((a,b) => a[0].localeCompare(b[0]));
+      const labels = sorted.map(([k]) => k);
+      const vals   = sorted.map(([, items]) => Math.round(avgItems(items)));
+      new Chart(document.getElementById(`evst-jeg-${sfx}-${c.gen}`), {
+        type: 'line',
+        data: { labels, datasets: [{ data: vals, borderColor:'#1a5276',
+          backgroundColor:'#1a527622', borderWidth:2, pointRadius:4, tension:0.3 }] },
+        options: jegChartOpts,
+      });
+    });
+  });
 }
 
 // ════════════════════════════════════════════════════════════
