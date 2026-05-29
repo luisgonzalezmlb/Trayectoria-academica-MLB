@@ -3034,7 +3034,7 @@ function renderDiaArtic() {
       const descFull  = (OA_DESC && OA_DESC[c.curso] && OA_DESC[c.curso][oa]) || '';
       const descShort = descFull.length > 130 ? descFull.slice(0,130) + '…' : descFull;
 
-      html += '<tr' + (hasPrev ? ' onclick="toggleArticRow('' + rid + '')" style="cursor:pointer"' : '') + '>' +
+      html += '<tr' + (hasPrev ? ' onclick="toggleArticRow(\'' + rid + '\')" style="cursor:pointer"' : '') + '>' +
               '<td style="white-space:nowrap"><strong style="font-family:var(--mono);color:' + col + '">' + oa + '</strong>' +
               (hasPrev ? '<span id="arr-' + rid + '" style="font-size:9px;margin-left:5px;color:var(--muted)">▶</span>' : '') +
               '</td>' +
