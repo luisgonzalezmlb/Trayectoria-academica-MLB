@@ -697,6 +697,7 @@ function goToSegDetalleCurso(gen) {
   _segFiltCurso = String(gen);
   _segFiltNota  = 'all';
   _segFiltPie   = false;
+  _segShowExt   = false;
 
   const cursoSel = document.getElementById('seg-filt-curso');
   if(cursoSel) cursoSel.value = String(gen);
@@ -704,6 +705,7 @@ function goToSegDetalleCurso(gen) {
   document.querySelectorAll('#seg-filt-tipo .filter-btn').forEach((b,i)=>b.classList.toggle('active', i===0));
   document.querySelectorAll('#seg-filt-nota .filter-btn').forEach((b,i)=>b.classList.toggle('active', i===0));
   document.getElementById('seg-filt-pie')?.classList.remove('active');
+  document.getElementById('btn-seg-ext')?.classList.remove('active');
 
   _applySegFilters();
   document.getElementById('seg-detalle-view')?.scrollIntoView({behavior:'smooth', block:'start'});
@@ -731,11 +733,30 @@ function _buildSegRiskCard(s, lv) {
   </div>`;
 }
 
+function _segDiaAvg(s, mat) {
+  for(const p of ['cierre','monitoreo','diagnostico']) {
+    const d = s.dia[CUR_YEAR]?.[p]?.[mat];
+    if(d && Object.keys(d).length) { const vs=Object.values(d); return vs.reduce((a,b)=>a+b,0)/vs.length; }
+  } return null;
+}
+function _segMaEst(s) {
+  for(const asig of Object.keys(MA)) {
+    for(let i=(MA[asig]||[]).length-1;i>=0;i--) {
+      const c = MA[asig][i].cursos.find(c=>c.gen===s.gen);
+      if(c) { const e=c.estudiantes?.find(e=>e.key===s.key); if(e&&e.pct!=null) return e.pct; }
+    }
+  } return null;
+}
+function _segHasExt(s) {
+  return _segDiaAvg(s,'lectura') != null || _segDiaAvg(s,'matematica') != null || _segMaEst(s) != null;
+}
+
 // Estado de filtros de la vista Detalle
 let _segFiltTipo  = 'all';
 let _segFiltCurso = 'all';
 let _segFiltNota  = 'all';
 let _segFiltPie   = false;
+let _segShowExt   = false;
 
 // Estado de filtros de la sección de tarjetas en vista Resumen
 let _segResumFiltTipo  = 'all';
@@ -753,6 +774,7 @@ function renderSeguimiento() {
   // Guardar lista completa para filtrado reactivo
   window._segAllStudents = [];
   ['alerta','activo','preventivo'].forEach(lv => riskGroups[lv].forEach(s => window._segAllStudents.push({s, lv})));
+  const _segHasAnyExt = window._segAllStudents.some(({s}) => _segHasExt(s));
 
   // KPIs
   document.getElementById('kpi-seg').innerHTML = `
@@ -886,6 +908,8 @@ function renderSeguimiento() {
             color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap">+Info</span>
           <button class="filter-btn" id="seg-filt-pie"
             onclick="setSegFilt('pie',null,this)">PIE</button>
+          ${_segHasAnyExt ? `<button class="filter-btn" id="btn-seg-ext" onclick="setSegExt(this)"
+            title="Agregar columnas DIA y Medición de avance">Resultados Externos</button>` : ''}
         </div>
 
         <div style="margin-left:auto;align-self:flex-end">
@@ -901,6 +925,7 @@ function renderSeguimiento() {
   _segFiltCurso = 'all';
   _segFiltNota  = 'all';
   _segFiltPie   = false;
+  _segShowExt   = false;
   _segResumFiltTipo  = 'all';
   _segResumFiltCurso = 'all';
   _segResumFiltPie   = false;
@@ -915,6 +940,12 @@ function setSegFilt(dim, val, btn) {
   if(dim === 'pie')   { _segFiltPie = !_segFiltPie; if(btn) btn.classList.toggle('active', _segFiltPie); _applySegFilters(); return; }
   if(btn) btn.classList.add('active');
   _applySegFilters();
+}
+
+function setSegExt(btn) {
+  _segShowExt = !_segShowExt;
+  if(btn) btn.classList.toggle('active', _segShowExt);
+  document.querySelectorAll('.seg-ext-col').forEach(el => el.style.display = _segShowExt ? '' : 'none');
 }
 
 function _applySegFilters() {
@@ -947,25 +978,12 @@ function _applySegFilters() {
   }
 
   // Helpers de evidencia externa
-  function _diaAvgE(s, mat) {
-    for(const p of ['cierre','monitoreo','diagnostico']) {
-      const d = s.dia[CUR_YEAR]?.[p]?.[mat];
-      if(d && Object.keys(d).length) { const vs=Object.values(d); return vs.reduce((a,b)=>a+b,0)/vs.length; }
-    } return null;
-  }
-  function _maEst(s) {
-    for(const asig of Object.keys(MA)) {
-      for(let i=(MA[asig]||[]).length-1;i>=0;i--) {
-        const c = MA[asig][i].cursos.find(c=>c.gen===s.gen);
-        if(c) { const e=c.estudiantes?.find(e=>e.key===s.key); if(e&&e.pct!=null) return e.pct; }
-      }
-    } return null;
-  }
   const _diaCol = v => v==null?'var(--muted)':v<40?'var(--red)':v<60?'var(--yellow)':v<80?'var(--accent)':'var(--green)';
   const _maCol  = v => v==null?'var(--muted)':v<50?'var(--red)':v<65?'var(--yellow)':'var(--green)';
   const _asCol  = v => v==null?'var(--muted)':v>=85?'var(--green)':v>=75?'var(--yellow)':'var(--red)';
   const hasMa = Object.keys(MA).length > 0;
-  const maTh  = hasMa ? '<th title="Medición de avance">MED.</th>' : '';
+  const extDisplay = _segShowExt ? '' : 'none';
+  const maTh  = hasMa ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Medición de avance">MED.</th>` : '';
 
   // Agrupar por curso (gen), de menor a mayor grado (gen desc = grado asc)
   const byCourse = {};
@@ -988,17 +1006,17 @@ function _applySegFilters() {
         return `<td class="${nc(v??null)}" style="text-align:center;font-family:var(--mono);font-size:12px">${v!=null ? v.toFixed(1) : '—'}</td>`;
       }).join('');
       const asist = nd?.asistencia;
-      const diaL = _diaAvgE(s,'lectura'); const diaM = _diaAvgE(s,'matematica'); const maP = hasMa ? _maEst(s) : null;
+      const diaL = _segDiaAvg(s,'lectura'); const diaM = _segDiaAvg(s,'matematica'); const maP = hasMa ? _segMaEst(s) : null;
       const pieSm = s.pie?.activo ? `<span class="pie-badge">PIE</span>` : '';
       const dot = `<span class="risk-dot-sm" style="background:${RISK_COLOR[lv]}"></span>`;
-      const maCell = hasMa ? `<td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_maCol(maP)}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>` : '';
+      const maCell = hasMa ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_maCol(maP)}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>` : '';
       return `<tr>
         <td style="cursor:pointer;font-weight:600;font-size:12px" onclick="openStudent('${s.key}')">${s.nombre}${pieSm}</td>
         ${cells}
         <td class="pf-cell ${nc(nd?.pf??null)}" style="text-align:center;font-family:var(--mono);font-size:12px">${nd?.pf!=null ? nd.pf.toFixed(1) : '—'}</td>
         <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${_asCol(asist)}">${asist!=null?asist+'%':'—'}</td>
-        <td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>
-        <td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>
+        <td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>
+        <td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>
         ${maCell}
         <td style="white-space:nowrap;font-size:11px">${dot}${RISK_LABEL[lv]}</td>
       </tr>`;
@@ -1013,8 +1031,8 @@ function _applySegFilters() {
             ${thCols}
             <th>PROM</th>
             <th title="Asistencia %">ASIST.</th>
-            <th title="DIA Lectura (último período)">DIA LECT.</th>
-            <th title="DIA Matemática (último período)">DIA MAT.</th>
+            <th class="seg-ext-col" style="display:${extDisplay}" title="DIA Lectura (último período)">DIA LECT.</th>
+            <th class="seg-ext-col" style="display:${extDisplay}" title="DIA Matemática (último período)">DIA MAT.</th>
             ${maTh}
             <th>Estado</th>
           </tr></thead>
@@ -1975,6 +1993,15 @@ function _cursoJegLast(s, area) {
   if(!entries.length) return null;
   entries.sort((a,b) => a[0].localeCompare(b[0]));
   return entries[entries.length-1][1];
+}
+function _colMaLatest(gen) {
+  for(const asig of Object.keys(MA)) {
+    const meds = MA[asig] || [];
+    for(let i=meds.length-1;i>=0;i--) {
+      const c = meds[i].cursos.find(c=>c.gen===gen);
+      if(c) return c.prom_pct;
+    }
+  } return null;
 }
 function _applyCursoFilter() {
   const isResumen = _cursoFilter === 'resumen';
