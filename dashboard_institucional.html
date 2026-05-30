@@ -3933,7 +3933,15 @@ function _maOpenCursoPanel(gen) {
     html += '</div>';
   }
 
-  // ── Tabla de estudiantes ──────────────────────────────────
+  // ── Tabla de estudiantes (orden canónico de EST / notas) ──
+  const _estOrder = Object.fromEntries(
+    EST.filter(s => s.gen === c.gen && s.napsis?.[CUR_YEAR])
+       .map((s, i) => [s.key, i])
+  );
+  const _estSorted = [...c.estudiantes].sort((a, b) =>
+    (_estOrder[a.key] ?? 9999) - (_estOrder[b.key] ?? 9999)
+  );
+
   html += `<div style="overflow-x:auto">
     <table class="subj-table" style="font-size:12px;width:100%">
       <thead><tr style="font-size:10px">
@@ -3945,7 +3953,7 @@ function _maOpenCursoPanel(gen) {
         <th title="DIA Matemática — último período disponible">DIA Mat.</th>
       </tr></thead><tbody>`;
 
-  c.estudiantes.forEach(s => {
+  _estSorted.forEach(s => {
     const col    = _maColor(s.pct);
     const prof   = estMap[s.key];
     const hasMed = s.pct !== null && s.pct !== undefined;
