@@ -206,7 +206,7 @@
   <button onclick="showTab('estudiantes',this)">Estudiantes</button>
   <button onclick="showTab('seguimiento',this)">Seguimiento</button>
   <button onclick="showTab('asignaturas',this)">Asignaturas</button>
-  <button onclick="showTab('medicion',this)">Medición de avance</button>
+  <button onclick="showTab('medicion',this)">Medición de avance matemática</button>
   <button onclick="showTab('evst',this)">Evaluaciones estand.</button>
 </nav>
 
@@ -289,14 +289,14 @@
   <div id="asig-content"></div>
 </div>
 
-<!-- ══════════════════ MEDICIÓN DE AVANCE ══════════════════ -->
+<!-- ══════════════════ MEDICIÓN DE AVANCE MATEMÁTICA ══════════════════ -->
 <div class="tab-content" id="tab-medicion">
   <div id="ma-selectors" style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
     <span id="ma-asig-lbl" style="font-size:11px;font-family:var(--mono);color:var(--muted);
       letter-spacing:1px;text-transform:uppercase;">Asignatura</span>
     <select class="course-select" id="ma-asig-sel" onchange="_maOnAsigChange()" style="min-width:160px"></select>
     <span style="font-size:11px;font-family:var(--mono);color:var(--muted);
-      letter-spacing:1px;text-transform:uppercase;">Medición</span>
+      letter-spacing:1px;text-transform:uppercase;">Medición matemática</span>
     <select class="course-select" id="ma-eval-sel" onchange="renderMedicionAvance()" style="min-width:200px"></select>
   </div>
   <div id="medicion-content"></div>
@@ -440,7 +440,7 @@ function renderColegio() {
     <th style="text-align:center;color:#1a73e8">PIE</th>
     <th style="text-align:center">DIA Lect.</th>
     <th style="text-align:center">DIA Mat.</th>
-    ${Object.keys(MA).length?'<th style="text-align:center">Med. Mat.</th>':''}
+    ${Object.keys(MA).length?'<th style="text-align:center" title="Medición de avance matemática">Med. matemática</th>':''}
   </tr></thead>`;
   // Devuelve el promedio de ejes del período más avanzado disponible
   function diaLatestAvg(curso, materia) {
@@ -533,7 +533,7 @@ function buildColTrayCard() {
   const hasSepaL = sLKeys.length > 0;
   const hasSepaG = sGKeys.length > 0;
 
-  // ── MEDICIÓN DE AVANCE: índice de ejes y habilidades (última medición) ───────
+  // ── MEDICIÓN DE AVANCE MATEMÁTICA: índice de ejes y habilidades (última medición) ───────
   const _maEjIdx = {}, _maHabIdx = {};
   let _maMedNombre = '';
   if(Object.keys(MA).length) {
@@ -629,12 +629,12 @@ function buildColTrayCard() {
     (hasSepaG ? _sub('Matemática','chart-col-smat') : '<div></div>') + '</div>';
   if(hasMAcol) chartsHtml +=
     '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
-    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">MEDICIÓN · ' + _maMedNombre + '</div>' +
+    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">MEDICIÓN MATEMÁTICA · ' + _maMedNombre + '</div>' +
     '<div class="g2">' +
     (_maEjNames.length ? _sub('Por eje','chart-col-maej') : '<div></div>') +
     (_maHabNames.length ? _sub('Por habilidad','chart-col-mahab') : '<div></div>') + '</div>';
 
-  const _maTitle = hasMAcol ? ' · Medición' : '';
+  const _maTitle = hasMAcol ? ' · Medición matemática' : '';
   container.innerHTML =
     '<div class="card mb24">' +
     '<div style="display:flex;align-items:center;margin-bottom:14px">' +
@@ -986,7 +986,7 @@ function renderSeguimiento() {
           <button class="filter-btn" id="seg-filt-pie"
             onclick="setSegFilt('pie',null,this)">PIE</button>
           ${_segHasAnyExt ? `<button class="filter-btn" id="btn-seg-ext" onclick="setSegExt(this)"
-            title="Agregar columnas DIA, Medición y PAES">Resultados Externos</button>` : ''}
+            title="Agregar columnas DIA, Medición matemática y PAES">Resultados Externos</button>` : ''}
         </div>
 
         <div style="margin-left:auto;align-self:flex-end">
@@ -1085,7 +1085,7 @@ function _applySegFilters() {
     const extHeads = [
       hasDiaL ? `<th class="seg-ext-col" style="display:${extDisplay}" title="DIA Lectura (último período)">DIA LECT.</th>` : '',
       hasDiaM ? `<th class="seg-ext-col" style="display:${extDisplay}" title="DIA Matemática (último período)">DIA MAT.</th>` : '',
-      hasMaCourse ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Medición de avance">MED.</th>` : '',
+      hasMaCourse ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Medición de avance matemática">MED. MAT.</th>` : '',
       hasPaesCL ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Último ensayo JEG · Comprensión Lectora (puntaje PAES)">PAES CL</th>` : '',
       hasPaesMA ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Último ensayo JEG · Matemática (puntaje PAES)">PAES MA</th>` : '',
     ].join('');
@@ -1753,7 +1753,7 @@ function renderCurso() {
           color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap">+Info</span>
         <button class="filter-btn" id="btn-curso-pie" onclick="setCursoPie(this)">PIE</button>
         ${_hasAnyExt ? `<button class="filter-btn" id="btn-curso-ext" onclick="setCursoExt(this)"
-          title="Agregar columnas DIA, Medición y PAES">Resultados Externos</button>` : ''}
+          title="Agregar columnas DIA, Medición matemática y PAES">Resultados Externos</button>` : ''}
       </div>
       <button class="dia-toggle" onclick="printCurso()" style="margin-left:auto;padding:6px 14px;font-size:12px">Imprimir</button>
     </div>
@@ -1768,7 +1768,7 @@ function renderCurso() {
             <th onclick="sortCurso('asistencia',this)" title="Asistencia %">ASIST.</th>
             ${_extDiaL?'<th class="curso-ext-col" style="display:none" title="DIA Lectura (último período)">DIA LECT.</th>':''}
             ${_extDiaM?'<th class="curso-ext-col" style="display:none" title="DIA Matemática (último período)">DIA MAT.</th>':''}
-            ${_extMA?'<th class="curso-ext-col" style="display:none" title="Medición de avance (última)">MEDICIÓN</th>':''}
+            ${_extMA?'<th class="curso-ext-col" style="display:none" title="Medición de avance matemática (última)">MED. MAT.</th>':''}
             ${_extJEG?'<th class="curso-ext-col" style="display:none" title="Último ensayo JEG · CL (puntaje PAES)">JEG CL</th><th class="curso-ext-col" style="display:none" title="Último ensayo JEG · MA (puntaje PAES)">JEG MA</th>':''}
             <th onclick="sortCurso('estado',this)" id="th-estado">Estado</th>
           </tr></thead>
@@ -3941,7 +3941,7 @@ function renderEvstPaes() {
 }
 
 // ════════════════════════════════════════════════════════════
-// PESTAÑA MEDICIÓN DE AVANCE CURRICULAR
+// PESTAÑA MEDICIÓN DE AVANCE MATEMÁTICA
 // ════════════════════════════════════════════════════════════
 
 function _maColor(pct) {
@@ -4098,7 +4098,7 @@ function _maEvalStats(ev) {
 }
 
 // ════════════════════════════════════════════════════════════
-// PESTAÑA MEDICIÓN DE AVANCE
+// PESTAÑA MEDICIÓN DE AVANCE MATEMÁTICA
 // ════════════════════════════════════════════════════════════
 
 // ── Inicialización: pobla selectores una sola vez ─────────────
@@ -4107,7 +4107,7 @@ function initMedicion() {
   const asigSel = document.getElementById('ma-asig-sel');
   if (!asigs.length) {
     document.getElementById('medicion-content').innerHTML =
-      '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos de medición de avance disponibles.</p>';
+      '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos de medición de avance matemática disponibles.</p>';
     document.getElementById('ma-selectors').style.display = 'none';
     return;
   }
@@ -4151,7 +4151,7 @@ function renderMedicionAvance() {
   let ev = MA[asig]?.[evalIdx];
 
   if (!ev) {
-    container.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos para esta medición.</p>';
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos para esta medición matemática.</p>';
     return;
   }
 
@@ -4159,7 +4159,7 @@ function renderMedicionAvance() {
   EST.forEach(e => { estMap[e.key] = e; });
   window._maEstMap = estMap;
 
-  // Reordenar cursos de la medición según el orden canónico de CURSOS
+  // Reordenar cursos de la medición matemática según el orden canónico de CURSOS
   const _evGens = new Set(ev.cursos.map(c => c.gen));
   ev = { ...ev, cursos: CURSOS.filter(c => _evGens.has(c.gen))
     .map(c => ev.cursos.find(ec => ec.gen === c.gen)) };
@@ -4259,13 +4259,13 @@ function renderMedicionAvance() {
     html += '<div class="g2 mb24" style="gap:28px">'+ejeHm+habHm+'</div>';
   }
 
-  // Evolucion entre mediciones (si hay mas de una para esta asignatura)
+  // Evolucion entre mediciones matemáticas (si hay mas de una para esta asignatura)
   const _allMeds = MA[asig] || [];
   if (_allMeds.length > 1) {
     html += '<div class="mb24">'
       +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);'
       +'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">'
-      +'Evolucion entre mediciones - promedio por curso</div>'
+      +'Evolución entre mediciones matemáticas - promedio por curso</div>'
       +'<div style="height:220px;position:relative">'
       +'<canvas id="ma-evol-chart"></canvas></div></div>';
   }
@@ -4273,7 +4273,7 @@ function renderMedicionAvance() {
   container.innerHTML = html;
 
   // -- Dibujar graficos --
-  // 4. Evolución entre mediciones — líneas por curso
+  // 4. Evolución entre mediciones matemáticas — líneas por curso
   if (_allMeds.length > 1) {
     const evolCtx = document.getElementById('ma-evol-chart');
     if (evolCtx) {
