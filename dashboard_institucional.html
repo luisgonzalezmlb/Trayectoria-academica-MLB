@@ -387,6 +387,17 @@ function goToCurso(gen) {
   document.getElementById('curso-select').value = gen;
   renderCurso();
 }
+function goToAsignatura(gen, colKey) {
+  showTab('asignaturas', document.querySelector('nav button:nth-child(5)'));
+  const cursoSel = document.getElementById('asig-curso-select');
+  const subjSel  = document.getElementById('asig-subj-select');
+  if(!cursoSel || !subjSel) return;
+  cursoSel.value = String(gen);
+  onAsigCursoChange();
+  subjSel.value = colKey;
+  renderAsignaturas();
+  document.getElementById('tab-asignaturas')?.scrollIntoView({behavior:'smooth', block:'start'});
+}
 function goToSeguimiento() {
   showTab('seguimiento', document.querySelector('nav button:nth-child(4)'));
 }
@@ -1978,7 +1989,7 @@ function _renderResumen() {
     const pctCol  = pctAp >= 90 ? 'var(--green)' : pctAp >= 80 ? 'var(--yellow)' : 'var(--red)';
     const promCol = !col.prom ? '' : col.prom < 4 ? 'var(--red)' : col.prom < 5 ? 'var(--yellow)' : col.prom < 6 ? 'var(--accent)' : 'var(--green)';
     const pct = n => col.n ? `<span style="font-size:10px;color:var(--muted)">(${(n/col.n*100).toFixed(0)}%)</span>` : '';
-    return `<tr style="cursor:pointer" onclick="openSubjPanel('${col.key}')">
+    return `<tr style="cursor:pointer" onclick="goToAsignatura(${document.getElementById('curso-select').value}, '${col.key}')">
       <td style="font-weight:600">${col.label}<span style="font-size:10px;color:var(--muted)">${typeLabel[col.type]||''}</span></td>
       <td>${col.n}</td>
       <td style="color:${promCol};font-weight:600">${col.prom ? col.prom.toFixed(1) : '—'}</td>
@@ -2013,8 +2024,7 @@ function _renderResumen() {
       <tbody>${rows}</tbody>
     </table>
   </div>
-  <div class="table-note" style="margin-top:4px">Clic en una asignatura para ver el detalle de notas por estudiante</div>
-  <div id="curso-subj-panel"></div>`;
+  <div class="table-note" style="margin-top:4px">Clic en una asignatura para abrir su detalle de evaluaciones en la pestaña Asignaturas</div>`;
 }
 
 function openSubjPanel(key) {
