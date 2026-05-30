@@ -3680,6 +3680,11 @@ function renderMedicionAvance() {
   EST.forEach(e => { estMap[e.key] = e; });
   window._maEstMap = estMap;
 
+  // Reordenar cursos de la medición según el orden canónico de CURSOS
+  const _evGens = new Set(ev.cursos.map(c => c.gen));
+  ev = { ...ev, cursos: CURSOS.filter(c => _evGens.has(c.gen))
+    .map(c => ev.cursos.find(ec => ec.gen === c.gen)) };
+
   const st       = _maEvalStats(ev);
   const coverage = st.allListed ? (100 * st.measured.length / st.allListed) : 0;
   const avgTxt   = st.avg !== null ? st.avg.toFixed(1) + '%' : '—';
