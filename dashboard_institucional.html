@@ -3811,6 +3811,67 @@ function _maDistBar(counts) {
   </div>`;
 }
 
+// Paleta de colores para gráficos multi-curso
+const _MA_COLORS = ['#3498db','#e67e22','#2ecc71','#9b59b6','#e74c3c',
+                    '#1abc9c','#f39c12','#16a085','#c0392b','#8e44ad',
+                    '#2980b9','#d35400','#27ae60','#7f8c8d'];
+
+// Opciones Chart.js para barras horizontales agrupadas (multi-curso)
+function _maGroupedOpts() {
+  return {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position:'bottom', labels:{ color:'#5a7a96',
+        font:{family:'IBM Plex Mono',size:9}, boxWidth:10, padding:8 } },
+      tooltip: { callbacks: { label: ctx => ctx.raw != null
+        ? ctx.dataset.label + ': ' + ctx.raw.toFixed(1) + '%'
+        : ctx.dataset.label + ': sin datos' } },
+    },
+    scales: {
+      x: { min:0, max:100,
+        ticks:{ color:'#5a7a96', font:{family:'IBM Plex Mono',size:9}, callback:v=>v+'%' },
+        grid:{color:'rgba(184,208,232,.4)'} },
+      y: { ticks:{ color:'#5a7a96', font:{family:'IBM Plex Mono',size:10} },
+        grid:{color:'rgba(184,208,232,.4)'} },
+    },
+  };
+}
+
+// Tabla heatmap: filas = nombres (ejes/hab), columnas = cursos + promedio
+function _maHeatmapHtml(names, courses, accessor) {
+  if (!names.length || !courses.length) return '';
+  function _hmCell(v) {
+    if (v === null) return '<td style="text-align:center;color:var(--muted);padding:3px 9px;font-size:11px">—</td>';
+    const bg = v >= 70 ? '#1e844922' : v >= 50 ? '#b7770d22' : '#c0392b22';
+    const fg = v >= 70 ? '#1e8449'   : v >= 50 ? '#b7770d'   : '#c0392b';
+    return '<td style="text-align:center;padding:3px 9px;background:'+bg+';color:'+fg
+      +';font-weight:700;font-size:11px">'+Math.round(v)+'%</td>';
+  }
+  let t = '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px;font-family:var(--mono)">'
+    +'<thead><tr>'
+    +'<th style="text-align:left;padding:3px 14px 3px 0;color:var(--muted);font-weight:400;min-width:130px">Eje</th>'
+    +courses.map(c=>'<th style="text-align:center;padding:3px 9px;color:var(--accent);font-size:10px;white-space:nowrap;font-weight:600">'+c.grade_name+'</th>').join('')
+    +'<th style="text-align:center;padding:3px 9px;color:var(--muted);font-size:10px;border-left:1px solid #dee9f5">Prom.</th>'
+    +'</tr></thead><tbody>';
+  names.forEach(name => {
+    const vals = courses.map(c => {
+      const f = accessor(c).find(e => e.nombre === name);
+      return f ? f.prom_pct : null;
+    });
+    const valid = vals.filter(v => v !== null);
+    const avg = valid.length ? valid.reduce((a,b) => a+b, 0) / valid.length : null;
+    t += '<tr>'
+      +'<td style="padding:3px 14px 3px 0;white-space:nowrap;color:#34495e">'+name+'</td>'
+      +vals.map(_hmCell).join('')
+      +_hmCell(avg)
+      +'</tr>';
+  });
+  t += '</tbody></table></div>';
+  return t;
+}
+
 function _maEvalStats(ev) {
   const measured = ev.cursos.flatMap(c => _maMeasuredStudents(c));
   const allListed = ev.cursos.reduce((acc,c) => acc + (c.n_curso || c.estudiantes?.length || c.n || 0), 0);
@@ -3947,35 +4008,118 @@ function renderMedicionAvance() {
     <div id="ma-curso-panel"></div>
   </div>`;
 
-  // ── Gráficos institucionales (barras + donut) ─────────────
-  html += `<div class="g2 mb24" style="gap:28px">
-    <div>
-      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-        text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Promedio por curso</div>
-      <div style="height:${Math.max(180, ev.cursos.length * 28)}px;position:relative">
-        <canvas id="ma-course-chart"></canvas>
-      </div>
-    </div>
-    <div>
-      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-        text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Distribución de logro</div>
-      <div style="height:190px;position:relative">
-        <canvas id="ma-dist-chart"></canvas>
-      </div>
-      <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:8px">
-        Más descendido: <strong style="color:${_maColor(st.weakest?.prom_pct)}">
-          ${st.weakest ? st.weakest.grade_name+' · '+st.weakest.prom_pct.toFixed(1)+'%' : '—'}
-        </strong><br>
-        Más alto: <strong style="color:${_maColor(st.strongest?.prom_pct)}">
-          ${st.strongest ? st.strongest.grade_name+' · '+st.strongest.prom_pct.toFixed(1)+'%' : '—'}
-        </strong>
-      </div>
-    </div>
-  </div>`;
+  // ── Gráficos institucionales ─────────────────────────────
+  // Índice de ejes y habilidades por curso (solo cursos con clasificación)
+  const _cls = ev.cursos.filter(c => c.tiene_clasif);
+  const _ejIdx = {};
+  const _hbIdx = {};
+  _cls.forEach(c => {
+    c.ejes.forEach(e => {
+      if (!_ejIdx[e.nombre]) _ejIdx[e.nombre] = [];
+      _ejIdx[e.nombre].push({gen:c.gen, grade_name:c.grade_name, prom_pct:e.prom_pct});
+    });
+    c.habilidades.forEach(h => {
+      if (!_hbIdx[h.nombre]) _hbIdx[h.nombre] = [];
+      _hbIdx[h.nombre].push({gen:c.gen, grade_name:c.grade_name, prom_pct:h.prom_pct});
+    });
+  });
+
+  function _avgArr(arr) { return arr.reduce((s,x) => s+x.prom_pct, 0) / arr.length; }
+
+  // Ejes / habilidades presentes en ≥2 cursos → comparación válida entre cursos
+  const _transEjes = Object.entries(_ejIdx)
+    .filter(([,a]) => a.length >= 2)
+    .sort((a,b) => _avgArr(a[1]) - _avgArr(b[1]))
+    .map(([name,]) => name);
+
+  const _transHabs = Object.entries(_hbIdx)
+    .filter(([,a]) => a.length >= 2)
+    .sort((a,b) => _avgArr(a[1]) - _avgArr(b[1]))
+    .map(([name,]) => name);
+
+  // Todos los ejes (para heatmap), ordenados de menor a mayor promedio
+  const _allEjesNames = Object.keys(_ejIdx)
+    .sort((a,b) => _avgArr(_ejIdx[a]) - _avgArr(_ejIdx[b]));
+
+  // Alturas de gráficos
+  const _courseH = Math.max(180, ev.cursos.length * 28);
+  const _ejH = _transEjes.length > 0
+    ? Math.max(160, _transEjes.length * Math.max(24, _cls.length * 14))
+    : 0;
+  const _habH = _transHabs.length > 0
+    ? Math.max(120, _transHabs.length * Math.max(24, _cls.length * 14))
+    : 0;
+
+  // Panel derecho: ejes transversales o donut de fallback
+  let _rightPanel = '';
+  if (_transEjes.length > 0) {
+    _rightPanel = '<div>'
+      +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);'
+      +'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">'
+      +'Ejes comunes entre cursos · '+_transEjes.length+' ejes · '+_cls.length+' cursos</div>'
+      +'<div style="height:'+_ejH+'px;position:relative">'
+      +'<canvas id="ma-trans-eje-chart"></canvas></div></div>';
+  } else {
+    // Fallback: donut de distribución cuando no hay ejes comparables
+    _rightPanel = '<div>'
+      +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);'
+      +'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Distribución de logro</div>'
+      +'<div style="height:190px;position:relative">'
+      +'<canvas id="ma-dist-chart"></canvas></div>'
+      +'<div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:8px">'
+      +'Más descendido: <strong style="color:'
+      +_maColor(st.weakest?.prom_pct)+'">'
+      +(st.weakest ? st.weakest.grade_name+' · '+st.weakest.prom_pct.toFixed(1)+'%' : '—')
+      +'</strong><br>Más alto: <strong style="color:'
+      +_maColor(st.strongest?.prom_pct)+'">'
+      +(st.strongest ? st.strongest.grade_name+' · '+st.strongest.prom_pct.toFixed(1)+'%' : '—')
+      +'</strong></div></div>';
+  }
+
+  html += '<div class="g2 mb24" style="gap:28px">'
+    +'<div>'
+    +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);'
+    +'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Promedio por curso</div>'
+    +'<div style="height:'+_courseH+'px;position:relative">'
+    +'<canvas id="ma-course-chart"></canvas></div></div>'
+    +_rightPanel
+    +'</div>';
+
+  // Habilidades cognitivas comunes (si las hay en ≥2 cursos)
+  if (_transHabs.length > 0) {
+    html += '<div class="mb24">'
+      +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);'
+      +'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">'
+      +'Habilidades cognitivas comunes · '+_transHabs.length+' habilidades</div>'
+      +'<div style="height:'+_habH+'px;position:relative">'
+      +'<canvas id="ma-trans-hab-chart"></canvas></div></div>';
+  }
+
+  // Mapa de calor: Ejes × Cursos (todos los ejes de los cursos con clasificación)
+  if (_allEjesNames.length > 0 && _cls.length > 1) {
+    html += '<div class="mb24">'
+      +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);'
+      +'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">'
+      +'Mapa de ejes por curso</div>'
+      +_maHeatmapHtml(_allEjesNames, _cls, c => c.ejes)
+      +'</div>';
+  }
+
+  // Evolución entre mediciones (si hay más de una para esta asignatura)
+  const _allMeds = MA[asig] || [];
+  if (_allMeds.length > 1) {
+    html += '<div class="mb24">'
+      +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);'
+      +'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">'
+      +'Evolución entre mediciones · promedio por curso</div>'
+      +'<div style="height:220px;position:relative">'
+      +'<canvas id="ma-evol-chart"></canvas></div></div>';
+  }
 
   container.innerHTML = html;
 
   // ── Dibujar gráficos ──────────────────────────────────────
+  // 1. Promedio por curso (barras horizontales, color por semáforo)
   const courseCtx = document.getElementById('ma-course-chart');
   if (courseCtx) {
     const ch = new Chart(courseCtx, {
@@ -3994,29 +4138,126 @@ function renderMedicionAvance() {
     window._maCharts.push(ch);
   }
 
-  const distCtx = document.getElementById('ma-dist-chart');
-  if (distCtx) {
-    const ch = new Chart(distCtx, {
-      type: 'doughnut',
-      data: {
-        labels: ['Inicial', 'En desarrollo', 'Adecuado'],
-        datasets: [{
-          data: [st.counts.inicial, st.counts.desarrollo, st.counts.adecuado],
-          backgroundColor: ['#c0392bcc', '#b7770dcc', '#1e8449cc'],
-          borderColor:     ['#c0392b', '#b7770d', '#1e8449'],
-          borderWidth: 1,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position:'bottom', labels: { color:'#5a7a96', font:{family:'IBM Plex Mono',size:10} } },
-          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} estudiantes` } },
+  // 2a. Ejes comunes entre cursos — barras agrupadas
+  if (_transEjes.length > 0) {
+    const ejCtx = document.getElementById('ma-trans-eje-chart');
+    if (ejCtx) {
+      const ch = new Chart(ejCtx, {
+        type: 'bar',
+        data: {
+          labels: _transEjes,
+          datasets: _cls.map((c,i) => ({
+            label: c.grade_name,
+            data: _transEjes.map(name => {
+              const f = c.ejes.find(e => e.nombre === name);
+              return f ? f.prom_pct : null;
+            }),
+            backgroundColor: _MA_COLORS[i % _MA_COLORS.length] + 'bb',
+            borderColor: _MA_COLORS[i % _MA_COLORS.length],
+            borderWidth: 1,
+          })),
         },
-      },
-    });
-    window._maCharts.push(ch);
+        options: _maGroupedOpts(),
+      });
+      window._maCharts.push(ch);
+    }
+  } else {
+    // 2b. Fallback: donut de distribución global
+    const distCtx = document.getElementById('ma-dist-chart');
+    if (distCtx) {
+      const ch = new Chart(distCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Inicial', 'En desarrollo', 'Adecuado'],
+          datasets: [{
+            data: [st.counts.inicial, st.counts.desarrollo, st.counts.adecuado],
+            backgroundColor: ['#c0392bcc', '#b7770dcc', '#1e8449cc'],
+            borderColor:     ['#c0392b', '#b7770d', '#1e8449'],
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position:'bottom', labels: { color:'#5a7a96', font:{family:'IBM Plex Mono',size:10} } },
+            tooltip: { callbacks: { label: ctx => ctx.label+': '+ctx.raw+' estudiantes' } },
+          },
+        },
+      });
+      window._maCharts.push(ch);
+    }
+  }
+
+  // 3. Habilidades cognitivas comunes — barras agrupadas
+  if (_transHabs.length > 0) {
+    const habCtx = document.getElementById('ma-trans-hab-chart');
+    if (habCtx) {
+      const habCourses = _cls.filter(c => c.habilidades.length > 0);
+      const ch = new Chart(habCtx, {
+        type: 'bar',
+        data: {
+          labels: _transHabs,
+          datasets: habCourses.map((c,i) => ({
+            label: c.grade_name,
+            data: _transHabs.map(name => {
+              const f = c.habilidades.find(h => h.nombre === name);
+              return f ? f.prom_pct : null;
+            }),
+            backgroundColor: _MA_COLORS[i % _MA_COLORS.length] + 'bb',
+            borderColor: _MA_COLORS[i % _MA_COLORS.length],
+            borderWidth: 1,
+          })),
+        },
+        options: _maGroupedOpts(),
+      });
+      window._maCharts.push(ch);
+    }
+  }
+
+  // 4. Evolución entre mediciones — líneas por curso
+  if (_allMeds.length > 1) {
+    const evolCtx = document.getElementById('ma-evol-chart');
+    if (evolCtx) {
+      const _evolGrades = [...new Set(_allMeds.flatMap(m => m.cursos.map(c => c.grade_name)))].sort();
+      const ch = new Chart(evolCtx, {
+        type: 'line',
+        data: {
+          labels: _allMeds.map(m => m.nombre),
+          datasets: _evolGrades.map((gn,i) => ({
+            label: gn,
+            data: _allMeds.map(m => {
+              const c = m.cursos.find(x => x.grade_name === gn);
+              return c ? c.prom_pct : null;
+            }),
+            borderColor: _MA_COLORS[i % _MA_COLORS.length],
+            backgroundColor: _MA_COLORS[i % _MA_COLORS.length] + '33',
+            borderWidth: 2,
+            pointRadius: 4,
+            tension: 0.3,
+            spanGaps: true,
+          })),
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position:'bottom', labels:{ color:'#5a7a96',
+              font:{family:'IBM Plex Mono',size:9}, boxWidth:10 } },
+            tooltip: { callbacks: { label: ctx =>
+              ctx.dataset.label+': '+(ctx.raw != null ? ctx.raw.toFixed(1)+'%' : '—') } },
+          },
+          scales: {
+            y: { min:0, max:100,
+              ticks:{ color:'#5a7a96', font:{family:'IBM Plex Mono',size:9}, callback:v=>v+'%' },
+              grid:{color:'rgba(184,208,232,.4)'} },
+            x: { ticks:{ color:'#5a7a96', font:{family:'IBM Plex Mono',size:10} },
+              grid:{color:'rgba(184,208,232,.4)'} },
+          },
+        },
+      });
+      window._maCharts.push(ch);
+    }
   }
 }
 
