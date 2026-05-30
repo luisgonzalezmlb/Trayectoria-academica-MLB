@@ -224,6 +224,7 @@
   </div>
 
   <div id="col-tray-card"></div>
+  <div id="col-heatmap-card"></div>
 
 </div>
 
@@ -258,6 +259,7 @@
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
     <button class="filter-btn active" id="btn-seg-resumen" onclick="toggleSegView('resumen')">Resumen</button>
     <button class="filter-btn" id="btn-seg-detalle" onclick="toggleSegView('detalle')">Detalle</button>
+    <button class="filter-btn" id="btn-seg-mesa" onclick="toggleSegView('mesa')">Mesa de casos</button>
     <button class="dia-toggle" onclick="printSeguimiento()"
       style="margin-left:auto;padding:6px 14px;font-size:12px">
       Imprimir
@@ -265,6 +267,7 @@
   </div>
   <div id="seg-resumen-view"></div>
   <div id="seg-detalle-view" style="display:none"></div>
+  <div id="seg-mesa-view" style="display:none"></div>
 </div>
 
 <!-- ══════════════════ ASIGNATURAS ══════════════════ -->
@@ -467,6 +470,7 @@ function renderColegio() {
   tbl.appendChild(tbody);
 
   buildColTrayCard();
+  buildColHeatmap();
 }
 
 // ── Trayectoria DIA + SEPA del colegio: promedio general + cursos ────────────
@@ -661,6 +665,133 @@ function buildColTrayCard() {
   if(hasSepaG) _mkChart('chart-col-smat',  sGLbls, schSG, c=>cSG[c.gen], sepaOpts);
 }
 
+// ── Heatmap institucional: Mapa de indicadores + Focos prioritarios ──────────
+function buildColHeatmap() {
+  const container = document.getElementById('col-heatmap-card');
+  if(!container || !CURSOS.length) return;
+
+  function _diaAvgC(c, mat) {
+    for(const p of ['cierre','monitoreo','diagnostico']) {
+      const d = c.dia?.[p]?.[mat];
+      if(d && Object.keys(d).length) {
+        const vs = Object.values(d); return vs.reduce((a,b)=>a+b,0)/vs.length;
+      }
+    } return null;
+  }
+  function _maProm(gen) {
+    for(const asig of Object.keys(MA)) {
+      for(let i=(MA[asig]||[]).length-1;i>=0;i--) {
+        const c = MA[asig][i].cursos.find(c=>c.gen===gen);
+        if(c && c.prom_pct!=null) return c.prom_pct;
+      }
+    } return null;
+  }
+  const _cSeg  = v => v==null?'#b0c4d8':v>=25?'#c0392b':v>=15?'#b7770d':'#1e8449';
+  const _cAl   = n => n==null?'#b0c4d8':n>=3?'#c0392b':n>=1?'#b7770d':'#1e8449';
+  const _cProm = v => v==null?'#b0c4d8':v<5.0?'#c0392b':v<5.5?'#b7770d':'#1e8449';
+  const _cAsis = v => v==null?'#b0c4d8':v<75?'#c0392b':v<85?'#b7770d':'#1e8449';
+  const _cDia  = v => v==null?'#b0c4d8':v<40?'#c0392b':v<60?'#b7770d':v<80?'#117a65':'#1e8449';
+  const _cMa   = v => v==null?'#b0c4d8':v<50?'#c0392b':v<65?'#b7770d':'#1e8449';
+  const _cPie  = (n,t) => !n?'#1e8449':n/t>0.25?'#b7770d':'#4285f4';
+
+  function _cell(val, col, label) {
+    return `<td style="text-align:center;background:${col}22;color:${col};
+      font-family:var(--mono);font-size:11px;font-weight:600;
+      padding:5px 7px;border-radius:3px;white-space:nowrap">${label}</td>`;
+  }
+
+  const hasMa = Object.keys(MA).length > 0;
+  const indics = ['% Seguim.','Alertas','Riesgo act.','Promedio','Asistencia','PIE','DIA Lect.','DIA Mat.'];
+  if(hasMa) indics.push('Medición');
+  const thCols = indics.map(i=>`<th style="text-align:center;font-size:10px;font-family:var(--mono);
+    color:var(--muted);padding:5px 7px;border-bottom:2px solid var(--border)">${i}</th>`).join('');
+
+  const rows = CURSOS.map(c => {
+    const tot  = c.vigentes || 1;
+    const segN = c.alerta + c.activo + c.preventivo;
+    const segP = segN/tot*100;
+    const diaL = _diaAvgC(c,'lectura'); const diaM = _diaAvgC(c,'matematica');
+    const maP  = hasMa ? _maProm(c.gen) : null;
+    const cells = [
+      _cell(segP,  _cSeg(segP),   segN ? segP.toFixed(0)+'%' : '—'),
+      _cell(c.alerta, _cAl(c.alerta), c.alerta||'—'),
+      _cell(c.activo, _cAl(c.activo), c.activo||'—'),
+      _cell(c.pf_prom, _cProm(c.pf_prom), c.pf_prom!=null ? c.pf_prom.toFixed(1) : '—'),
+      _cell(c.asist_prom, _cAsis(c.asist_prom), c.asist_prom!=null ? c.asist_prom.toFixed(0)+'%' : '—'),
+      _cell(c.pie_count, _cPie(c.pie_count,tot), c.pie_count||'—'),
+      _cell(diaL, _cDia(diaL), diaL!=null ? diaL.toFixed(0)+'%' : '—'),
+      _cell(diaM, _cDia(diaM), diaM!=null ? diaM.toFixed(0)+'%' : '—'),
+    ];
+    if(hasMa) cells.push(_cell(maP, _cMa(maP), maP!=null ? maP.toFixed(0)+'%' : '—'));
+    return `<tr>
+      <td style="font-weight:600;color:var(--accent);font-size:12px;padding:5px 10px;
+        white-space:nowrap;cursor:pointer" onclick="goToCurso(${c.gen})">${c.grade_name}</td>
+      ${cells.join('')}</tr>`;
+  }).join('');
+
+  // ── Focos prioritarios (generación automática) ─────────────
+  function _foco(c) {
+    const tot  = c.vigentes || 1;
+    const segP = (c.alerta+c.activo+c.preventivo)/tot*100;
+    const diaL = _diaAvgC(c,'lectura'); const diaM = _diaAvgC(c,'matematica');
+    const maP  = hasMa ? _maProm(c.gen) : null;
+    const sigs=[]; const evid=[]; const acts=[];
+    if(c.alerta>=3)      { sigs.push('Múltiples alertas académicas'); acts.push('Mesa de revisión urgente'); }
+    else if(c.alerta>=1) { sigs.push('Alerta académica'); acts.push('Entrevista individual y plan de apoyo'); }
+    if(c.activo>=3)      { sigs.push('Riesgo activo elevado'); acts.push('Revisar evaluaciones pendientes'); }
+    if(c.pf_prom!=null && c.pf_prom<5.0) { sigs.push('Promedio bajo 5.0'); acts.push('Revisar asignaturas con mayor reprobación'); }
+    if(c.asist_prom!=null && c.asist_prom<75) { sigs.push('Asistencia crítica (<75%)'); acts.push('Activar protocolo de asistencia'); }
+    else if(c.asist_prom!=null && c.asist_prom<85) { sigs.push('Asistencia baja (<85%)'); acts.push('Seguimiento de asistencia'); }
+    if(diaL!=null && diaL<50) { evid.push('DIA Lect. descendida'); acts.push('Reforzar comprensión lectora'); }
+    if(diaM!=null && diaM<50) { evid.push('DIA Mat. descendida'); acts.push('Reforzar bases matemáticas'); }
+    if(maP!=null && maP<50)   { evid.push('Medición avance bajo 50%'); acts.push('Revisar avance curricular de matemática'); }
+    if(c.pie_count>0) evid.push(`${c.pie_count} est. PIE`);
+    if(!sigs.length && !evid.length) return null;
+    const col = c.alerta>=3?'var(--red)':c.alerta>=1||c.activo>=3?'var(--yellow)':'var(--accent)';
+    return {gen:c.gen, name:c.grade_name, col,
+      signal: sigs[0]||'—',
+      evidence: evid.join(' · ')||'—',
+      action: [...new Set(acts)].slice(0,2).join(' / ')||'—'};
+  }
+  const focos = CURSOS.map(_foco).filter(Boolean)
+    .sort((a,b)=>(['var(--red)','var(--yellow)','var(--accent)'].indexOf(a.col))
+                -(['var(--red)','var(--yellow)','var(--accent)'].indexOf(b.col)));
+  const focosRows = focos.map(f=>`<tr>
+    <td style="cursor:pointer;font-weight:600;color:${f.col}" onclick="goToCurso(${f.gen})">${f.name}</td>
+    <td style="font-size:12px;color:${f.col};font-weight:600">${f.signal}</td>
+    <td style="font-size:12px;color:var(--muted)">${f.evidence}</td>
+    <td style="font-size:12px">${f.action}</td>
+  </tr>`).join('');
+
+  container.innerHTML = `
+  <div class="card mb24">
+    <div class="card-title">Mapa de Indicadores por Curso · ${CUR_YEAR}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+      Verde = favorable · Amarillo = atención · Rojo = prioridad · Gris = sin dato · Azul = PIE
+    </div>
+    <div style="overflow-x:auto">
+      <table class="summary-table" style="font-size:12px">
+        <thead><tr><th style="text-align:left;padding:5px 10px">Curso</th>${thCols}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>
+  ${focos.length?`<div class="card mb24">
+    <div class="card-title">Focos Prioritarios · ${CUR_YEAR}</div>
+    <div style="overflow-x:auto">
+      <table class="summary-table" style="font-size:12px">
+        <thead><tr>
+          <th style="text-align:left">Curso</th>
+          <th style="text-align:left">Señal principal</th>
+          <th style="text-align:left">Evidencia cruzada</th>
+          <th style="text-align:left">Acción sugerida</th>
+        </tr></thead>
+        <tbody>${focosRows}</tbody>
+      </table>
+    </div>
+  </div>`:''}`
+}
+
 // ════════════════════════════════════════════════════════════
 // PESTAÑA SEGUIMIENTO
 // ════════════════════════════════════════════════════════════
@@ -672,12 +803,20 @@ function toggleSegView(view) {
   _segCurrentView = view;
   const rv = document.getElementById('seg-resumen-view');
   const dv = document.getElementById('seg-detalle-view');
+  const mv = document.getElementById('seg-mesa-view');
   const br = document.getElementById('btn-seg-resumen');
   const bd = document.getElementById('btn-seg-detalle');
+  const bm = document.getElementById('btn-seg-mesa');
   rv.style.display = view === 'resumen' ? '' : 'none';
   dv.style.display = view === 'detalle' ? '' : 'none';
+  if(mv) mv.style.display = view === 'mesa' ? '' : 'none';
   br.classList.toggle('active', view === 'resumen');
   bd.classList.toggle('active', view === 'detalle');
+  if(bm) bm.classList.toggle('active', view === 'mesa');
+  if(view === 'mesa' && !window._segMesaDone) {
+    buildSegMesa();
+    window._segMesaDone = true;
+  }
 }
 
 function _buildSegRiskCard(s, lv) {
@@ -699,6 +838,94 @@ function _buildSegRiskCard(s, lv) {
       <div class="risk-tags">${tags||'<span style="font-size:11px;color:var(--muted);font-style:italic">Sin asignaturas críticas</span>'}</div>
     </div>
     <div class="risk-prom" style="color:${RISK_COLOR[lv]}">${ns(nd.pf)}</div>
+  </div>`;
+}
+
+// ── Mesa de Casos ─────────────────────────────────────────────────────────────
+function buildSegMesa() {
+  const container = document.getElementById('seg-mesa-view');
+  if(!container) return;
+  const segAll = window._segAllStudents ?? [];
+  if(!segAll.length) {
+    container.innerHTML = '<div style="color:var(--muted);font-style:italic;padding:16px">Sin estudiantes en seguimiento.</div>';
+    return;
+  }
+  function _diaAvgE(s, mat) {
+    for(const p of ['cierre','monitoreo','diagnostico']) {
+      const d = s.dia[CUR_YEAR]?.[p]?.[mat];
+      if(d && Object.keys(d).length) { const vs=Object.values(d); return vs.reduce((a,b)=>a+b,0)/vs.length; }
+    } return null;
+  }
+  function _maEst(s) {
+    for(const asig of Object.keys(MA)) {
+      for(let i=(MA[asig]||[]).length-1;i>=0;i--) {
+        const c = MA[asig][i].cursos.find(c=>c.gen===s.gen);
+        if(c) { const e=c.estudiantes?.find(e=>e.key===s.key); if(e&&e.pct!=null) return e.pct; }
+      }
+    } return null;
+  }
+  const PRIO_COL = {1:'#c0392b',2:'#b7770d',3:'#2471a3',4:'#1e8449'};
+  const PRIO_LBL = {1:'P1 · Alta',2:'P2 · Media-alta',3:'P3 · Media',4:'P4 · Baja'};
+  function _prio(s, lv) {
+    const nd=s.napsis[CUR_YEAR]; const asist=nd?.asistencia??null;
+    const pie=s.pie?.activo;
+    const extDesc=((_diaAvgE(s,'matematica')??100)<50)||((_diaAvgE(s,'lectura')??100)<50)||((_maEst(s)??100)<50);
+    const asistBaja=asist!==null&&asist<75;
+    if(lv==='alerta'&&(pie||asistBaja)) return 1;
+    if(lv==='alerta') return 2;
+    if(lv==='activo'&&(pie||asistBaja)) return 2;
+    if(lv==='activo'&&extDesc) return 3;
+    if(lv==='activo') return 3;
+    if(lv==='preventivo'&&(pie||asistBaja)) return 3;
+    return 4;
+  }
+  const built = segAll.map(({s,lv}) => {
+    const nd=s.napsis[CUR_YEAR];
+    const diaL=_diaAvgE(s,'lectura'); const diaM=_diaAvgE(s,'matematica'); const maP=_maEst(s);
+    const prio=_prio(s,lv);
+    const asist=nd?.asistencia;
+    const cols=(nd?.col_map??[]).filter(c=>!c.np);
+    const crit=cols.filter(c=>{const v=nd?.asignaturas?.[c.key];return v!=null&&v<5;})
+                   .map(c=>{const v=nd?.asignaturas?.[c.key];return `${c.short} ${v!=null?v.toFixed(1):''}`;} ).join(', ');
+    const extEv=[diaL!=null?`DIA Lect. ${diaL.toFixed(0)}%`:'',
+                 diaM!=null?`DIA Mat. ${diaM.toFixed(0)}%`:'',
+                 maP!=null?`Medición ${maP.toFixed(0)}%`:''].filter(Boolean).join(' · ')||'—';
+    const pfCol=nd?.pf!=null?(nd.pf<5?'var(--red)':nd.pf<5.5?'var(--yellow)':'var(--text)'):'var(--muted)';
+    const acol=asist!=null?(asist<75?'var(--red)':asist<85?'var(--yellow)':'var(--text)'):'var(--muted)';
+    return {prio, lv, html:`<tr>
+      <td style="cursor:pointer;font-weight:600;font-size:12px" onclick="openStudent('${s.key}')">${s.nombre}</td>
+      <td style="font-size:12px;color:var(--accent)">${_genToCurso[s.gen]??''}</td>
+      <td><span style="background:${RISK_COLOR[lv]}22;color:${RISK_COLOR[lv]};padding:1px 6px;border-radius:3px;font-size:10px;font-family:var(--mono)">${RISK_LABEL[lv]}</span></td>
+      <td style="text-align:center;font-family:var(--mono);font-size:12px;font-weight:700;color:${pfCol}">${nd?.pf!=null?nd.pf.toFixed(1):'—'}</td>
+      <td style="text-align:center;font-family:var(--mono);font-size:12px;color:${acol}">${asist!=null?asist+'%':'—'}</td>
+      <td style="text-align:center;font-size:11px">${s.pie?.activo?`<span class="pie-badge">PIE · ${s.pie.diag}</span>`:'—'}</td>
+      <td style="font-size:11px;color:${crit?'var(--red)':'var(--muted)'}">${crit||'—'}</td>
+      <td style="font-size:11px;color:var(--muted)">${extEv}</td>
+      <td style="text-align:center"><span style="background:${PRIO_COL[prio]}22;color:${PRIO_COL[prio]};padding:1px 7px;border-radius:3px;font-size:10px;font-family:var(--mono);font-weight:700">${PRIO_LBL[prio]}</span></td>
+    </tr>`};
+  }).sort((a,b)=>a.prio-b.prio);
+  container.innerHTML = `
+  <div class="card mb24">
+    <div class="card-title">Mesa de Casos · Seguimiento ${CUR_YEAR}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+      P1 = alerta + PIE o asistencia crítica · P2 = alerta sin agravantes o activo + PIE/asistencia · P3 = activo sin agravantes o preventivo + factores · P4 = preventivo base
+    </div>
+    <div style="overflow-x:auto">
+      <table class="std-table" style="font-size:12px">
+        <thead><tr>
+          <th style="text-align:left;min-width:170px">Estudiante</th>
+          <th>Curso</th><th>Estado</th>
+          <th style="text-align:center">Prom.</th>
+          <th style="text-align:center">Asist.</th>
+          <th style="text-align:center">PIE</th>
+          <th style="text-align:left">Asig. críticas (&lt;5.0)</th>
+          <th style="text-align:left">Evidencia externa</th>
+          <th style="text-align:center">Prioridad</th>
+        </tr></thead>
+        <tbody>${built.map(r=>r.html).join('')}</tbody>
+      </table>
+    </div>
+    <div class="table-note">Ordenado por prioridad sugerida · Clic en nombre → perfil del estudiante</div>
   </div>`;
 }
 
@@ -1477,6 +1704,130 @@ function renderAsignaturas() {
   const aprob  = finals.filter(v=>v>=4).length;
   const pctAp  = finals.length ? (aprob/finals.length*100).toFixed(0)+'%' : '—';
 
+  // ── Resumen por evaluación ────────────────────────────────────────────────
+  function _evalSummary(semName, evNames) {
+    if(!evNames.length) return '';
+    const sem = semName === '1' ? '1' : '2';
+    const statRows = evNames.map(n => {
+      const grades = students.map(s => s.napsis[CUR_YEAR]?.evals?.[colKey]?.[sem]?.find(e=>e.name===n)?.grade).filter(v=>v!=null);
+      if(!grades.length) return null;
+      const avg = grades.reduce((a,b)=>a+b,0)/grades.length;
+      const b40 = grades.filter(v=>v<4.0).length;
+      const b50 = grades.filter(v=>v<5.0).length;
+      const mx  = Math.max(...grades);
+      const mn  = Math.min(...grades);
+      const nc2 = v => v<4?'var(--red)':v<5?'var(--yellow)':v<6?'var(--accent)':'var(--green)';
+      return `<tr>
+        <td style="font-size:11px">${n}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:700;color:${nc2(avg)}">${avg.toFixed(2)}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${b40>0?'var(--red)':'var(--muted)'}">${b40>0?b40:'—'}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${b50>0?'var(--yellow)':'var(--muted)'}">${b50>0?b50:'—'}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${nc2(mx)}">${mx.toFixed(1)}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${nc2(mn)}">${mn.toFixed(1)}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px">${grades.length}</td>
+      </tr>`;
+    }).filter(Boolean).join('');
+    if(!statRows) return '';
+    return `<div style="margin-bottom:16px">
+      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+        text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${semName}° Semestre · Resumen por evaluación</div>
+      <div style="overflow-x:auto">
+        <table class="std-table" style="font-size:11px">
+          <thead><tr>
+            <th style="text-align:left;min-width:160px">Evaluación</th>
+            <th style="text-align:center">Promedio</th>
+            <th style="text-align:center;color:var(--red)">Bajo 4.0</th>
+            <th style="text-align:center;color:var(--yellow)">Bajo 5.0</th>
+            <th style="text-align:center">Máx.</th>
+            <th style="text-align:center">Mín.</th>
+            <th style="text-align:center">N°</th>
+          </tr></thead>
+          <tbody>${statRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  // ── Heatmap de notas (estudiantes × evaluaciones) ─────────────────────────
+  const HM_SIZE = 32; // px por celda
+  function _heatmapView() {
+    if(!hasEvals) return '<p style="color:var(--muted);font-style:italic;font-size:12px;padding:8px 0">Sin evaluaciones detalladas disponibles para esta asignatura.</p>';
+    const allEvNames = [...sem1Names, ...sem2Names];
+    if(!allEvNames.length) return '';
+
+    // Cabecera con separador semestral
+    const hdrCells = allEvNames.map((n,i) => {
+      const isSep = i===sem1Names.length && sem2Names.length>0;
+      const angle = n.length>8 ? 'writing-mode:vertical-rl;transform:rotate(180deg);' : '';
+      return `<th title="${n}" style="text-align:center;font-size:10px;font-family:var(--mono);
+        max-width:${HM_SIZE}px;padding:3px;overflow:hidden;${angle}
+        ${isSep?'border-left:2px solid var(--border)':''}">${n.length>12?n.slice(0,10)+'…':n}</th>`;
+    }).join('');
+
+    const rows = students.map(s => {
+      const nd=s.napsis[CUR_YEAR]; const ev=nd?.evals?.[colKey];
+      const cells = allEvNames.map((n,i) => {
+        const sem = i<sem1Names.length ? '1' : '2';
+        const v = ev?.[sem]?.find(e=>e.name===n)?.grade ?? null;
+        const bg = v==null?'#e8edf2':v<4?'#ffd5d5':v<5?'#fff0c0':v<6?'#d0efff':'#c8f0d0';
+        const tc = v==null?'#a0b0c0':v<4?'#8b0000':v<5?'#6b4200':v<6?'#00456b':'#004d1a';
+        const isSep = i===sem1Names.length && sem2Names.length>0;
+        return `<td style="text-align:center;width:${HM_SIZE}px;height:${HM_SIZE}px;
+          background:${bg};color:${tc};font-family:var(--mono);font-size:10px;font-weight:700;
+          ${isSep?'border-left:2px solid var(--border)':''}">${v!=null?v.toFixed(1):''}</td>`;
+      }).join('');
+      const fg=nd?.asignaturas?.[colKey];
+      const fgBg=fg==null?'#e8edf2':fg<4?'#ffd5d5':fg<5?'#fff0c0':fg<6?'#d0efff':'#c8f0d0';
+      const fgTc=fg==null?'#a0b0c0':fg<4?'#8b0000':fg<5?'#6b4200':fg<6?'#00456b':'#004d1a';
+      return `<tr>
+        <td style="cursor:pointer;white-space:nowrap;font-size:11px;font-weight:500;
+          padding:2px 8px" onclick="openStudent('${s.key}')">${s.nombre}</td>
+        ${cells}
+        <td style="text-align:center;width:${HM_SIZE}px;height:${HM_SIZE}px;
+          background:${fgBg};color:${fgTc};font-family:var(--mono);font-size:10px;font-weight:700;
+          border-left:3px solid var(--border)">${fg!=null?fg.toFixed(1):''}</td>
+      </tr>`;
+    }).join('');
+
+    // Fila de promedios por evaluación
+    const avgRow = allEvNames.map((n,i) => {
+      const sem = i<sem1Names.length?'1':'2';
+      const grades = students.map(s=>s.napsis[CUR_YEAR]?.evals?.[colKey]?.[sem]?.find(e=>e.name===n)?.grade).filter(v=>v!=null);
+      const avg=grades.length?grades.reduce((a,b)=>a+b,0)/grades.length:null;
+      const bg=avg==null?'#e8edf2':avg<4?'#ffd5d5':avg<5?'#fff0c0':avg<6?'#d0efff':'#c8f0d0';
+      const tc=avg==null?'#a0b0c0':avg<4?'#8b0000':avg<5?'#6b4200':avg<6?'#00456b':'#004d1a';
+      const isSep = i===sem1Names.length && sem2Names.length>0;
+      return `<td style="text-align:center;background:${bg};color:${tc};
+        font-family:var(--mono);font-size:9px;font-weight:700;
+        ${isSep?'border-left:2px solid var(--border)':''}">${avg!=null?avg.toFixed(1):''}</td>`;
+    }).join('');
+
+    return `<div style="overflow-x:auto">
+      <table style="border-collapse:collapse;font-size:11px">
+        <thead><tr>
+          <th style="text-align:left;min-width:160px;font-size:11px;padding:4px 8px">Estudiante</th>
+          ${hdrCells}
+          <th style="text-align:center;font-size:10px;font-family:var(--mono);
+            border-left:3px solid var(--border)">Final</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td style="font-size:9px;font-family:var(--mono);color:var(--muted);
+            padding:2px 8px">PROM. EVAL.</td>
+          ${avgRow}
+          <td style="text-align:center;font-family:var(--mono);font-size:9px;font-weight:700;
+            border-left:3px solid var(--border);background:#e8e8e8;color:#333">${
+              finals.length ? (finals.reduce((a,b)=>a+b,0)/finals.length).toFixed(1) : ''
+            }</td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <div class="table-note">Clic en nombre → perfil del estudiante · colores: rojo &lt;4 · amarillo &lt;5 · azul &lt;6 · verde ≥6</div>`;
+  }
+
+  const evalResumen = [_evalSummary('1', sem1Names), _evalSummary('2', sem2Names)].filter(Boolean).join('');
+  const hmHtml = _heatmapView();
+
   cont.innerHTML = `
   <div class="kpi-row" style="margin-bottom:16px">
     <div class="kpi"><div class="value ca">${students.length}</div><div class="desc">Estudiantes</div></div>
@@ -1485,17 +1836,40 @@ function renderAsignaturas() {
     <div class="kpi"><div class="value cg">${aprob}</div><div class="desc">Aprobados (${pctAp})</div></div>
   </div>
   <div class="card mb24">
-    <div class="card-title">${colLabel} · ${curso?.grade_name ?? ''} · ${CUR_YEAR}
-      ${!hasEvals ? '<span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:8px">— solo nota final disponible</span>' : ''}
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>${colLabel} · ${curso?.grade_name ?? ''} · ${CUR_YEAR}
+        ${!hasEvals ? '<span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:8px">— solo nota final disponible</span>' : ''}
+      </span>
+      ${hasEvals ? `<div style="display:flex;gap:4px">
+        <button class="dia-toggle active" id="asig-view-tabla" onclick="switchAsigView('tabla')" style="font-size:10px;padding:3px 9px">Tabla detalle</button>
+        <button class="dia-toggle" id="asig-view-heatmap" onclick="switchAsigView('heatmap')" style="font-size:10px;padding:3px 9px">Mapa de calor</button>
+      </div>` : ''}
     </div>
-    <div style="overflow-x:auto">
+    <div id="asig-tabla-view" style="overflow-x:auto">
       <table class="std-table">
         <thead>${thead}</thead>
         <tbody>${tbody}</tbody>
       </table>
+      <div class="table-note">Clic en un estudiante para ver su perfil · — sin nota registrada · cursiva = promedio semestral</div>
     </div>
-    <div class="table-note">Clic en un estudiante para ver su perfil · — sin nota registrada · cursiva = promedio semestral</div>
-  </div>`;
+    <div id="asig-heatmap-view" style="display:none">${hmHtml}</div>
+  </div>
+  ${evalResumen ? `<div class="card mb24">
+    <div class="card-title">Resumen por Evaluación · ${colLabel} · ${curso?.grade_name ?? ''}</div>
+    ${evalResumen}
+  </div>` : ''}`;
+}
+
+function switchAsigView(view) {
+  const tv = document.getElementById('asig-tabla-view');
+  const hv = document.getElementById('asig-heatmap-view');
+  const bt = document.getElementById('asig-view-tabla');
+  const bh = document.getElementById('asig-view-heatmap');
+  if(!tv || !hv) return;
+  tv.style.display = view==='tabla' ? '' : 'none';
+  hv.style.display = view==='heatmap' ? '' : 'none';
+  if(bt) bt.classList.toggle('active', view==='tabla');
+  if(bh) bh.classList.toggle('active', view==='heatmap');
 }
 
 let _cursoCharts = [];
@@ -1631,6 +2005,96 @@ function renderCurso() {
   _renderResumen();
   renderCursoTable(students, active_cols);
   buildDiaSepaTrayCurso(curso, students);
+  _renderPriorizMatrix(students, curso);
+}
+
+function _renderPriorizMatrix(students, curso) {
+  // Crear o reutilizar el contenedor dentro de curso-content
+  let cont = document.getElementById('curso-prio-matrix');
+  if(!cont) {
+    cont = document.createElement('div');
+    cont.id = 'curso-prio-matrix';
+    const parent = document.getElementById('curso-content');
+    if(parent) parent.appendChild(cont); else return;
+  }
+  if(!students.length) { cont.innerHTML=''; return; }
+
+  function _diaAvgS(s, mat) {
+    for(const p of ['cierre','monitoreo','diagnostico']) {
+      const d = s.dia[CUR_YEAR]?.[p]?.[mat];
+      if(d && Object.keys(d).length) { const vs=Object.values(d); return vs.reduce((a,b)=>a+b,0)/vs.length; }
+    } return null;
+  }
+  function _maProm(s) {
+    for(const asig of Object.keys(MA)) {
+      for(let i=(MA[asig]||[]).length-1;i>=0;i--) {
+        const c=MA[asig][i].cursos.find(c=>c.gen===s.gen);
+        if(c) { const e=c.estudiantes?.find(e=>e.key===s.key); if(e&&e.pct!=null) return e.pct; }
+      }
+    } return null;
+  }
+
+  const hasMa = Object.keys(MA).length > 0;
+  const _nc = v => v==null?'var(--muted)':v<4?'var(--red)':v<5?'var(--yellow)':v<5.5?'var(--accent)':'var(--green)';
+  const _da = v => v==null?'var(--muted)':v<40?'var(--red)':v<60?'var(--yellow)':v<80?'#117a65':'var(--green)';
+  const _ac = v => v==null?'var(--muted)':v<75?'var(--red)':v<85?'var(--yellow)':'var(--green)';
+  const _mc = v => v==null?'var(--muted)':v<50?'var(--red)':v<65?'var(--yellow)':'var(--green)';
+
+  const riskOrder = {alerta:0,activo:1,preventivo:2};
+  const sorted = [...students].sort((a,b) => {
+    const ra=riskOrder[a.napsis[CUR_YEAR]?.risk]??3;
+    const rb=riskOrder[b.napsis[CUR_YEAR]?.risk]??3;
+    return ra!==rb ? ra-rb : a.nombre.localeCompare(b.nombre);
+  });
+
+  const maHead = hasMa ? '<th style="text-align:center">Medición</th>' : '';
+  const rows = sorted.map(s => {
+    const nd=s.napsis[CUR_YEAR]; const lv=nd?.risk;
+    const diaL=_diaAvgS(s,'lectura'); const diaM=_diaAvgS(s,'matematica'); const maP=hasMa?_maProm(s):null;
+    const asist=nd?.asistencia;
+    const lvBadge=lv?`<span style="background:${RISK_COLOR[lv]}22;color:${RISK_COLOR[lv]};
+      padding:0 5px;border-radius:3px;font-size:9px;font-family:var(--mono)">${RISK_LABEL[lv]}</span>`:'';
+    const pieBadge=s.pie?.activo?`<span class="pie-badge">PIE</span>`:'';
+    const maCell=hasMa?`<td style="text-align:center;font-family:var(--mono);font-size:11px;
+      font-weight:600;color:${_mc(maP)}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>`:'';
+    return `<tr>
+      <td style="cursor:pointer;font-weight:500;font-size:12px;white-space:nowrap"
+        onclick="openStudent('${s.key}')">${s.nombre}${pieBadge}</td>
+      <td style="text-align:center;font-family:var(--mono);font-size:12px;font-weight:700;
+        color:${_nc(nd?.pf)}">${nd?.pf!=null?nd.pf.toFixed(1):'—'}</td>
+      <td style="text-align:center;font-size:10px">${lvBadge}</td>
+      <td style="text-align:center;font-family:var(--mono);font-size:11px;
+        color:${_ac(asist)}">${asist!=null?asist+'%':'—'}</td>
+      <td style="text-align:center;font-family:var(--mono);font-size:11px;
+        font-weight:600;color:${_da(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>
+      <td style="text-align:center;font-family:var(--mono);font-size:11px;
+        font-weight:600;color:${_da(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>
+      ${maCell}
+    </tr>`;
+  }).join('');
+
+  cont.innerHTML = `
+  <div class="card mb24">
+    <div class="card-title">Priorización Cruzada · ${curso.grade_name} · ${CUR_YEAR}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+      Ordenado por estado de riesgo · Rojo = prioridad alta · Amarillo = atención · Verde = favorable
+    </div>
+    <div style="overflow-x:auto">
+      <table class="std-table" style="font-size:12px">
+        <thead><tr>
+          <th style="text-align:left;min-width:160px">Estudiante</th>
+          <th style="text-align:center">Prom.</th>
+          <th style="text-align:center">Estado</th>
+          <th style="text-align:center">Asistencia</th>
+          <th style="text-align:center">DIA Lect.</th>
+          <th style="text-align:center">DIA Mat.</th>
+          ${maHead}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="table-note">Clic en nombre → perfil del estudiante</div>
+  </div>`;
 }
 
 function buildRiskCard(s, lv, year, active_cols) {
@@ -4114,6 +4578,103 @@ function renderMedicionAvance() {
       +'Evolución entre mediciones · promedio por curso</div>'
       +'<div style="height:220px;position:relative">'
       +'<canvas id="ma-evol-chart"></canvas></div></div>';
+  }
+
+  // ── Tabla de brechas por eje/habilidad ───────────────────────────────────
+  if (_cls.length > 0) {
+    const _allEjIdx = {};
+    const _allHbIdx = {};
+    _cls.forEach(c => {
+      c.ejes.forEach(e => {
+        if(!_allEjIdx[e.nombre]) _allEjIdx[e.nombre]={vals:[],courses:[]};
+        _allEjIdx[e.nombre].vals.push(e.prom_pct);
+        _allEjIdx[e.nombre].courses.push({name:c.grade_name,gen:c.gen,prom:e.prom_pct});
+      });
+      c.habilidades.forEach(h => {
+        if(!_allHbIdx[h.nombre]) _allHbIdx[h.nombre]={vals:[],courses:[]};
+        _allHbIdx[h.nombre].vals.push(h.prom_pct);
+        _allHbIdx[h.nombre].courses.push({name:c.grade_name,gen:c.gen,prom:h.prom_pct});
+      });
+    });
+
+    function _brechaRows(idx, tipo) {
+      return Object.entries(idx)
+        .map(([name, {vals, courses}]) => {
+          const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+          const bajo60 = courses.filter(c=>c.prom<60);
+          const minC = courses.reduce((a,b)=>a.prom<b.prom?a:b);
+          const col = avg<50?'var(--red)':avg<65?'var(--yellow)':'var(--accent)';
+          const sug = avg<50
+            ? (tipo==='eje'?'Priorizar en planificación semestral':'Fortalecer habilidad de menor logro')
+            : avg<65 ? (tipo==='eje'?'Reforzar en evaluaciones intermedias':'Monitorear en próxima medición') : '—';
+          return {avg, name, bajo60, minC, col, sug};
+        })
+        .sort((a,b)=>a.avg-b.avg)
+        .map(r => `<tr>
+          <td style="font-size:11px;font-weight:500">${r.name}</td>
+          <td style="text-align:center;font-family:var(--mono);font-size:11px;
+            color:${r.bajo60.length>0?'var(--red)':'var(--muted)'}">${r.bajo60.length>0?r.bajo60.map(c=>c.name).join(', '):'—'}</td>
+          <td style="text-align:center;font-size:11px;color:var(--accent)">${r.minC.name} (${r.minC.prom.toFixed(0)}%)</td>
+          <td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:700;
+            color:${r.col}">${r.avg.toFixed(1)}%</td>
+          <td style="font-size:11px;color:var(--muted)">${r.sug}</td>
+        </tr>`).join('');
+    }
+
+    const ejeBrechaRows = _brechaRows(_allEjIdx, 'eje');
+    const habBrechaRows = _brechaRows(_allHbIdx, 'habilidad');
+    const brHead = `<thead><tr>
+      <th style="text-align:left;min-width:160px">Eje / Habilidad</th>
+      <th style="text-align:center">Cursos bajo 60%</th>
+      <th style="text-align:center">Curso más descendido</th>
+      <th style="text-align:center">Prom. institución</th>
+      <th style="text-align:left">Sugerencia de foco</th>
+    </tr></thead>`;
+
+    if(ejeBrechaRows || habBrechaRows) {
+      html += '<div class="card mb24"><div class="card-title">Brechas por Eje y Habilidad · '+ev.nombre+'</div>';
+      if(ejeBrechaRows) html += '<div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Ejes temáticos</div>'
+        +'<div style="overflow-x:auto;margin-bottom:16px"><table class="std-table" style="font-size:12px">'+brHead+'<tbody>'+ejeBrechaRows+'</tbody></table></div>';
+      if(habBrechaRows) html += '<div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Habilidades cognitivas</div>'
+        +'<div style="overflow-x:auto"><table class="std-table" style="font-size:12px">'+brHead+'<tbody>'+habBrechaRows+'</tbody></table></div>';
+      html += '</div>';
+    }
+  }
+
+  // ── Estudiantes sin medición por curso ───────────────────────────────────
+  const _sinMedicion = ev.cursos.filter(c => {
+    const sinMed = c.n_curso && c.n_curso > c.n;
+    return sinMed;
+  });
+  if(_sinMedicion.length) {
+    const sinRows = _sinMedicion.map(c => {
+      // Buscar estudiantes del curso sin medición
+      const allEst = EST.filter(s => s.gen === c.gen && s.napsis[CUR_YEAR]);
+      const medKeys = new Set((c.estudiantes||[]).map(e=>e.key));
+      const sinMed = allEst.filter(s => !medKeys.has(s.key));
+      const names = sinMed.length ? sinMed.map(s=>`<span style="cursor:pointer;color:var(--accent)" onclick="openStudent('${s.key}')">${s.nombre}</span>`).join(', ') : '—';
+      return `<tr>
+        <td style="font-weight:600;font-size:12px;color:var(--accent)">${c.grade_name}</td>
+        <td style="text-align:center;font-family:var(--mono)">${c.n}/${c.n_curso}</td>
+        <td style="font-size:11px">${names}</td>
+      </tr>`;
+    }).join('');
+    html += `<div class="card mb24">
+      <div class="card-title">Estudiantes sin Medición · ${ev.nombre}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+        La cobertura incompleta es una señal: indica ausencias el día de la evaluación o estudiantes no registrados.
+      </div>
+      <div style="overflow-x:auto">
+        <table class="std-table" style="font-size:12px">
+          <thead><tr>
+            <th style="text-align:left">Curso</th>
+            <th style="text-align:center">Con datos / Total</th>
+            <th style="text-align:left">Sin medición</th>
+          </tr></thead>
+          <tbody>${sinRows}</tbody>
+        </table>
+      </div>
+    </div>`;
   }
 
   container.innerHTML = html;
