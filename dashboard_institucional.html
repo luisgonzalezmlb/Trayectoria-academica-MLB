@@ -3559,6 +3559,57 @@ function _maChartOpts() {
   };
 }
 
+function _maMeasuredStudents(c) {
+  return (c.estudiantes || []).filter(s => s.pct !== null && s.pct !== undefined);
+}
+
+function _maLevel(pct) {
+  if (pct === null || pct === undefined) return { key:'sin', label:'Sin dato', color:'var(--muted)' };
+  if (pct < 50) return { key:'inicial', label:'Inicial', color:'var(--red)' };
+  if (pct < 70) return { key:'desarrollo', label:'En desarrollo', color:'var(--yellow)' };
+  return { key:'adecuado', label:'Adecuado', color:'var(--green)' };
+}
+
+function _maLevelCounts(students) {
+  const counts = { inicial:0, desarrollo:0, adecuado:0, sin:0 };
+  students.forEach(s => {
+    counts[_maLevel(s.pct).key]++;
+  });
+  return counts;
+}
+
+function _maDistBar(counts) {
+  const total = counts.inicial + counts.desarrollo + counts.adecuado;
+  if (!total) return '<span style="color:var(--muted)">—</span>';
+  const parts = [
+    ['inicial', counts.inicial, 'var(--red)'],
+    ['desarrollo', counts.desarrollo, 'var(--yellow)'],
+    ['adecuado', counts.adecuado, 'var(--green)'],
+  ];
+  return `<div style="min-width:150px">
+    <div style="height:8px;border-radius:4px;overflow:hidden;background:#eef4fb;display:flex">
+      ${parts.map(([,n,col]) => `<span style="width:${(100*n/total).toFixed(1)}%;background:${col}"></span>`).join('')}
+    </div>
+    <div style="margin-top:4px;font-size:10px;font-family:var(--mono);color:var(--muted)">
+      I ${counts.inicial} · D ${counts.desarrollo} · A ${counts.adecuado}
+    </div>
+  </div>`;
+}
+
+function _maEvalStats(ev) {
+  const measured = ev.cursos.flatMap(c => _maMeasuredStudents(c));
+  const allListed = ev.cursos.reduce((acc,c) => acc + (c.n_curso || c.estudiantes?.length || c.n || 0), 0);
+  const avg = measured.length ? measured.reduce((a,s)=>a+s.pct,0) / measured.length : null;
+  const counts = _maLevelCounts(measured);
+  const lowCourses = ev.cursos.filter(c => c.prom_pct < 50).length;
+  const watchCourses = ev.cursos.filter(c => c.prom_pct >= 50 && c.prom_pct < 70).length;
+  const critical = measured.filter(s => s.pct < 50).length;
+  const sorted = [...ev.cursos].sort((a,b) => a.prom_pct - b.prom_pct);
+  const weakest = sorted[0];
+  const strongest = sorted[sorted.length - 1];
+  return { measured, allListed, avg, counts, lowCourses, watchCourses, critical, weakest, strongest };
+}
+
 function renderMedicionAvance() {
   const container = document.getElementById('medicion-content');
   const asigs = Object.keys(MA);
@@ -3588,22 +3639,63 @@ function renderMedicionAvance() {
     html += `<div id="ma-asig-${ai}"${ai > 0 ? ' style="display:none"' : ''}>`;
 
     evals.forEach((ev, ei) => {
+      const st = _maEvalStats(ev);
+      const coverage = st.allListed ? (100 * st.measured.length / st.allListed) : 0;
+      const avgTxt = st.avg !== null ? st.avg.toFixed(1) + '%' : '—';
+      const weakestTxt = st.weakest ? `${st.weakest.grade_name} · ${st.weakest.prom_pct.toFixed(1)}%` : '—';
+      const strongestTxt = st.strongest ? `${st.strongest.grade_name} · ${st.strongest.prom_pct.toFixed(1)}%` : '—';
+
+      // ── Lectura institucional de la medición ───────────────────
+      html += `<div class="card mb24">
+        <div class="card-title">${ev.nombre} · ${asig} · ${ev.año}</div>
+        <div class="kpi-grid" style="margin-bottom:18px">
+          <div class="kpi"><div class="value ${_maColor(st.avg)}">${avgTxt}</div><div class="desc">Promedio estudiantes</div></div>
+          <div class="kpi"><div class="value cr">${st.critical}</div><div class="desc">Bajo 50%</div></div>
+          <div class="kpi"><div class="value cy">${st.watchCourses}</div><div class="desc">Cursos 50–69%</div></div>
+          <div class="kpi"><div class="value ca">${coverage.toFixed(0)}%</div><div class="desc">Cobertura</div></div>
+        </div>
+        <div class="g2" style="gap:28px">
+          <div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+              Promedio por curso
+            </div>
+            <div style="height:${Math.max(180, ev.cursos.length * 28)}px;position:relative">
+              <canvas id="ma-course-${ai}-${ei}"></canvas>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+              Distribución de logro
+            </div>
+            <div style="height:190px;position:relative">
+              <canvas id="ma-dist-${ai}-${ei}"></canvas>
+            </div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:8px">
+              Más descendido: <strong style="color:${_maColor(st.weakest?.prom_pct)}">${weakestTxt}</strong><br>
+              Más alto: <strong style="color:${_maColor(st.strongest?.prom_pct)}">${strongestTxt}</strong>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
       // ── Tarjeta resumen por curso ─────────────────────────────
       html += `
         <div class="card mb24">
-          <div class="card-title">${ev.nombre} · ${asig} · ${ev.año}</div>
+          <div class="card-title">Resumen por curso · ${ev.nombre} · ${asig}</div>
           <div style="overflow-x:auto">
             <table class="summary-table">
               <thead><tr>
                 <th style="text-align:left">Curso</th>
                 <th style="text-align:center">N°</th>
                 <th style="text-align:center">% promedio</th>
+                <th style="text-align:center">Distribución</th>
                 <th style="text-align:center">Ejes / habilidades</th>
               </tr></thead><tbody>`;
 
       ev.cursos.forEach(c => {
         const col = _maColor(c.prom_pct);
         const nLabel = c.n_curso && c.n_curso !== c.n ? `${c.n}/${c.n_curso}` : c.n;
+        const counts = _maLevelCounts(_maMeasuredStudents(c));
         let ejeTags = '';
         if (c.tiene_clasif && c.ejes.length) {
           ejeTags = c.ejes.map(e =>
@@ -3621,6 +3713,7 @@ function renderMedicionAvance() {
           <td style="text-align:center;font-family:var(--mono)">${nLabel}</td>
           <td style="text-align:center;color:${col};font-weight:700;
               font-size:15px;font-family:var(--mono)">${c.prom_pct.toFixed(1)}%</td>
+          <td style="text-align:center">${_maDistBar(counts)}</td>
           <td style="font-size:11px">${ejeTags || '<span style="color:var(--muted)">—</span>'}</td>
         </tr>`;
       });
@@ -3671,6 +3764,7 @@ function renderMedicionAvance() {
               <th style="text-align:left">Estudiante</th>
               <th style="text-align:center">Correctas</th>
               <th style="text-align:center">%</th>
+              <th style="text-align:center">Nivel</th>
               <th style="text-align:center">Nota Matemática</th>
               <th style="text-align:center">DIA Mat.</th>
             </tr></thead><tbody>`;
@@ -3679,6 +3773,7 @@ function renderMedicionAvance() {
           const col = _maColor(s.pct);
           const prof = estMap[s.key];
           const hasMed = s.pct !== null && s.pct !== undefined;
+          const lv = _maLevel(s.pct);
           const napsisMat = prof?.napsis?.[CUR_YEAR]?.asignaturas?.['MATEMÁTICA'] ?? null;
           // DIA mat: última periodo disponible
           let diaVal = null;
@@ -3702,6 +3797,11 @@ function renderMedicionAvance() {
             </td>
             <td style="text-align:center;color:${col};font-weight:700;
                 font-family:var(--mono)">${hasMed ? s.pct.toFixed(1)+'%' : '—'}</td>
+            <td style="text-align:center">
+              <span style="display:inline-block;padding:2px 7px;border-radius:3px;
+                font-size:10px;font-family:var(--mono);border:1px solid ${lv.color};
+                color:${lv.color};background:${hasMed ? lv.color + '12' : 'transparent'}">${lv.label}</span>
+            </td>
             <td style="text-align:center;font-family:var(--mono);
                 color:${napsisMat !== null ? (napsisMat < 4 ? 'var(--red)' : napsisMat < 5 ? 'var(--yellow)' : 'var(--green)') : 'var(--muted)'}">
               ${napsisMat !== null ? napsisMat.toFixed(1) : '—'}
@@ -3725,6 +3825,44 @@ function renderMedicionAvance() {
   // Renderizar gráficos
   asigs.forEach((asig, ai) => {
     MA[asig].forEach((ev, ei) => {
+      const st = _maEvalStats(ev);
+      const courseCtx = document.getElementById(`ma-course-${ai}-${ei}`);
+      if (courseCtx) new Chart(courseCtx, {
+        type: 'bar',
+        data: {
+          labels: ev.cursos.map(c => c.grade_name),
+          datasets: [{
+            data: ev.cursos.map(c => c.prom_pct),
+            backgroundColor: ev.cursos.map(c => _maBgColor(c.prom_pct) + 'cc'),
+            borderColor: ev.cursos.map(c => _maBgColor(c.prom_pct)),
+            borderWidth: 1,
+          }],
+        },
+        options: _maChartOpts(),
+      });
+
+      const distCtx = document.getElementById(`ma-dist-${ai}-${ei}`);
+      if (distCtx) new Chart(distCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Inicial', 'En desarrollo', 'Adecuado'],
+          datasets: [{
+            data: [st.counts.inicial, st.counts.desarrollo, st.counts.adecuado],
+            backgroundColor: ['#c0392bcc', '#b7770dcc', '#1e8449cc'],
+            borderColor: ['#c0392b', '#b7770d', '#1e8449'],
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position:'bottom', labels: { color:'#5a7a96', font: { family:'IBM Plex Mono', size:10 } } },
+            tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} estudiantes` } },
+          },
+        },
+      });
+
       ev.cursos.forEach(c => {
         if (!c.tiene_clasif) return;
         const opts = _maChartOpts();
