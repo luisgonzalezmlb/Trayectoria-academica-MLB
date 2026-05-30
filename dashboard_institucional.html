@@ -814,8 +814,18 @@ function _segMaEst(s) {
     }
   } return null;
 }
+function _segJegLast(s, area) {
+  const entries = Object.entries(s.jeg?.[area] || {});
+  if(!entries.length) return null;
+  entries.sort((a,b) => a[0].localeCompare(b[0]));
+  return entries[entries.length-1][1];
+}
 function _segHasExt(s) {
-  return _segDiaAvg(s,'lectura') != null || _segDiaAvg(s,'matematica') != null || _segMaEst(s) != null;
+  return _segDiaAvg(s,'lectura') != null
+    || _segDiaAvg(s,'matematica') != null
+    || _segMaEst(s) != null
+    || _segJegLast(s,'cl') != null
+    || _segJegLast(s,'ma') != null;
 }
 
 // Estado de filtros de la vista Detalle
@@ -976,7 +986,7 @@ function renderSeguimiento() {
           <button class="filter-btn" id="seg-filt-pie"
             onclick="setSegFilt('pie',null,this)">PIE</button>
           ${_segHasAnyExt ? `<button class="filter-btn" id="btn-seg-ext" onclick="setSegExt(this)"
-            title="Agregar columnas DIA y Medición de avance">Resultados Externos</button>` : ''}
+            title="Agregar columnas DIA, Medición y PAES">Resultados Externos</button>` : ''}
         </div>
 
         <div style="margin-left:auto;align-self:flex-end">
@@ -1047,6 +1057,7 @@ function _applySegFilters() {
   // Helpers de evidencia externa
   const _diaCol = v => v==null?'var(--muted)':v<40?'var(--red)':v<60?'var(--yellow)':v<80?'var(--accent)':'var(--green)';
   const _maCol  = v => v==null?'var(--muted)':v<50?'var(--red)':v<65?'var(--yellow)':'var(--green)';
+  const _paesCol = v => v==null?'var(--muted)':v<500?'var(--red)':v<600?'var(--yellow)':'var(--green)';
   const _asCol  = v => v==null?'var(--muted)':v>=85?'var(--green)':v>=75?'var(--yellow)':'var(--red)';
   const hasMa = Object.keys(MA).length > 0;
   const extDisplay = _segShowExt ? '' : 'none';
@@ -1069,10 +1080,14 @@ function _applySegFilters() {
     const hasDiaL = items.some(({s}) => _segDiaAvg(s,'lectura') != null);
     const hasDiaM = items.some(({s}) => _segDiaAvg(s,'matematica') != null);
     const hasMaCourse = hasMa && items.some(({s}) => _segMaEst(s) != null);
+    const hasPaesCL = items.some(({s}) => _segJegLast(s,'cl') != null);
+    const hasPaesMA = items.some(({s}) => _segJegLast(s,'ma') != null);
     const extHeads = [
       hasDiaL ? `<th class="seg-ext-col" style="display:${extDisplay}" title="DIA Lectura (último período)">DIA LECT.</th>` : '',
       hasDiaM ? `<th class="seg-ext-col" style="display:${extDisplay}" title="DIA Matemática (último período)">DIA MAT.</th>` : '',
       hasMaCourse ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Medición de avance">MED.</th>` : '',
+      hasPaesCL ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Último ensayo JEG · Comprensión Lectora (puntaje PAES)">PAES CL</th>` : '',
+      hasPaesMA ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Último ensayo JEG · Matemática (puntaje PAES)">PAES MA</th>` : '',
     ].join('');
     const rows = items.map(({s, lv}) => {
       const nd = s.napsis[CUR_YEAR];
@@ -1082,12 +1097,15 @@ function _applySegFilters() {
       }).join('');
       const asist = nd?.asistencia;
       const diaL = _segDiaAvg(s,'lectura'); const diaM = _segDiaAvg(s,'matematica'); const maP = hasMa ? _segMaEst(s) : null;
+      const paesCL = _segJegLast(s,'cl'); const paesMA = _segJegLast(s,'ma');
       const pieSm = s.pie?.activo ? `<span class="pie-badge">PIE</span>` : '';
       const dot = `<span class="risk-dot-sm" style="background:${RISK_COLOR[lv]}"></span>`;
       const extCells = [
         hasDiaL ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>` : '',
         hasDiaM ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>` : '',
         hasMaCourse ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_maCol(maP)}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>` : '',
+        hasPaesCL ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_paesCol(paesCL)}">${paesCL!=null?paesCL:'—'}</td>` : '',
+        hasPaesMA ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_paesCol(paesMA)}">${paesMA!=null?paesMA:'—'}</td>` : '',
       ].join('');
       return `<tr>
         <td style="cursor:pointer;font-weight:600;font-size:12px" onclick="openStudent('${s.key}')">${s.nombre}${pieSm}</td>
