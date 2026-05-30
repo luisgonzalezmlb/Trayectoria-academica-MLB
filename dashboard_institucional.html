@@ -932,68 +932,68 @@ function _applySegFilters() {
       }
     } return null;
   }
-  const PRIO_COL = {1:'#c0392b',2:'#b7770d',3:'#2471a3',4:'#1e8449'};
-  const PRIO_LBL = {1:'P1 · Alta',2:'P2 · Media-alta',3:'P3 · Media',4:'P4 · Baja'};
-  function _prio(s, lv) {
-    const nd=s.napsis[CUR_YEAR]; const asist=nd?.asistencia??null;
-    const pie=s.pie?.activo;
-    const extDesc=((_diaAvgE(s,'matematica')??100)<50)||((_diaAvgE(s,'lectura')??100)<50)||((_maEst(s)??100)<50);
-    const asistBaja=asist!==null&&asist<75;
-    if(lv==='alerta'&&(pie||asistBaja)) return 1;
-    if(lv==='alerta') return 2;
-    if(lv==='activo'&&(pie||asistBaja)) return 2;
-    if(lv==='activo'&&extDesc) return 3;
-    if(lv==='activo') return 3;
-    if(lv==='preventivo'&&(pie||asistBaja)) return 3;
-    return 4;
-  }
+  const _diaCol = v => v==null?'var(--muted)':v<40?'var(--red)':v<60?'var(--yellow)':v<80?'var(--accent)':'var(--green)';
+  const _maCol  = v => v==null?'var(--muted)':v<50?'var(--red)':v<65?'var(--yellow)':'var(--green)';
+  const _asCol  = v => v==null?'var(--muted)':v>=85?'var(--green)':v>=75?'var(--yellow)':'var(--red)';
+  const hasMa = Object.keys(MA).length > 0;
+  const maTh  = hasMa ? '<th title="Medición de avance">MED.</th>' : '';
 
-  const built = filtered.map(({s,lv}) => {
-    const nd=s.napsis[CUR_YEAR];
-    const diaL=_diaAvgE(s,'lectura'); const diaM=_diaAvgE(s,'matematica'); const maP=_maEst(s);
-    const prio=_prio(s,lv);
-    const asist=nd?.asistencia;
-    const cols=(nd?.col_map??[]).filter(c=>!c.np);
-    const crit=cols.filter(c=>{const v=nd?.asignaturas?.[c.key];return v!=null&&v<5;})
-                   .map(c=>{const v=nd?.asignaturas?.[c.key];return `${c.short} ${v!=null?v.toFixed(1):''}`;} ).join(', ');
-    const extEv=[diaL!=null?`DIA Lect. ${diaL.toFixed(0)}%`:'',
-                 diaM!=null?`DIA Mat. ${diaM.toFixed(0)}%`:'',
-                 maP!=null?`Medición ${maP.toFixed(0)}%`:''].filter(Boolean).join(' · ')||'—';
-    const pfCol=nd?.pf!=null?(nd.pf<5?'var(--red)':nd.pf<5.5?'var(--yellow)':'var(--text)'):'var(--muted)';
-    const acol=asist!=null?(asist<75?'var(--red)':asist<85?'var(--yellow)':'var(--text)'):'var(--muted)';
-    return {prio, lv, html:`<tr>
-      <td style="cursor:pointer;font-weight:600;font-size:12px" onclick="openStudent('${s.key}')">${s.nombre}</td>
-      <td style="font-size:12px;color:var(--accent)">${_genToCurso[s.gen]??''}</td>
-      <td><span style="background:${RISK_COLOR[lv]}22;color:${RISK_COLOR[lv]};padding:1px 6px;border-radius:3px;font-size:10px;font-family:var(--mono)">${RISK_LABEL[lv]}</span></td>
-      <td style="text-align:center;font-family:var(--mono);font-size:12px;font-weight:700;color:${pfCol}">${nd?.pf!=null?nd.pf.toFixed(1):'—'}</td>
-      <td style="text-align:center;font-family:var(--mono);font-size:12px;color:${acol}">${asist!=null?asist+'%':'—'}</td>
-      <td style="text-align:center;font-size:11px">${s.pie?.activo?`<span class="pie-badge">PIE · ${s.pie.diag}</span>`:'—'}</td>
-      <td style="font-size:11px;color:${crit?'var(--red)':'var(--muted)'}">${crit||'—'}</td>
-      <td style="font-size:11px;color:var(--muted)">${extEv}</td>
-      <td style="text-align:center"><span style="background:${PRIO_COL[prio]}22;color:${PRIO_COL[prio]};padding:1px 7px;border-radius:3px;font-size:10px;font-family:var(--mono);font-weight:700">${PRIO_LBL[prio]}</span></td>
-    </tr>`};
-  }).sort((a,b)=>a.prio-b.prio);
+  // Agrupar por curso (gen), de menor a mayor grado (gen desc = grado asc)
+  const byCourse = {};
+  filtered.forEach(({s, lv}) => {
+    if(!byCourse[s.gen]) byCourse[s.gen] = { gen:s.gen, items:[] };
+    byCourse[s.gen].items.push({s, lv});
+  });
+  const courseEntries = Object.values(byCourse).sort((a,b) => b.gen - a.gen);
+  const _riskOrder = {alerta:0, activo:1, preventivo:2};
 
-  container.innerHTML = `
-    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
-      P1 = alerta + PIE o asistencia crítica · P2 = alerta sin agravantes o activo + PIE/asistencia · P3 = activo o preventivo + factores · P4 = preventivo base · Ordenado por prioridad
-    </div>
-    <div style="overflow-x:auto">
-      <table class="std-table" style="font-size:12px">
-        <thead><tr>
-          <th style="text-align:left;min-width:170px">Estudiante</th>
-          <th>Curso</th><th>Estado</th>
-          <th style="text-align:center">Prom.</th>
-          <th style="text-align:center">Asist.</th>
-          <th style="text-align:center">PIE</th>
-          <th style="text-align:left">Asig. críticas (&lt;5.0)</th>
-          <th style="text-align:left">Evidencia externa</th>
-          <th style="text-align:center">Prioridad</th>
-        </tr></thead>
-        <tbody>${built.map(r=>r.html).join('')}</tbody>
-      </table>
-    </div>
-    <div class="table-note">Clic en nombre → perfil del estudiante</div>`;
+  container.innerHTML = courseEntries.map(({gen, items}) => {
+    const courseName = _genToCurso[gen] ?? `Gen. ${gen}`;
+    items.sort((a,b) => (_riskOrder[a.lv]??3) - (_riskOrder[b.lv]??3) || a.s.nombre.localeCompare(b.s.nombre));
+    const cols = (items[0]?.s.napsis[CUR_YEAR]?.col_map ?? []).filter(c => !c.np);
+    const thCols = cols.map(c => `<th title="${c.label}">${c.short}</th>`).join('');
+    const rows = items.map(({s, lv}) => {
+      const nd = s.napsis[CUR_YEAR];
+      const cells = cols.map(c => {
+        const v = nd?.asignaturas?.[c.key];
+        return `<td class="${nc(v??null)}" style="text-align:center;font-family:var(--mono);font-size:12px">${v!=null ? v.toFixed(1) : '—'}</td>`;
+      }).join('');
+      const asist = nd?.asistencia;
+      const diaL = _diaAvgE(s,'lectura'); const diaM = _diaAvgE(s,'matematica'); const maP = hasMa ? _maEst(s) : null;
+      const pieSm = s.pie?.activo ? `<span class="pie-badge">PIE</span>` : '';
+      const dot = `<span class="risk-dot-sm" style="background:${RISK_COLOR[lv]}"></span>`;
+      const maCell = hasMa ? `<td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_maCol(maP)}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>` : '';
+      return `<tr>
+        <td style="cursor:pointer;font-weight:600;font-size:12px" onclick="openStudent('${s.key}')">${s.nombre}${pieSm}</td>
+        ${cells}
+        <td class="pf-cell ${nc(nd?.pf??null)}" style="text-align:center;font-family:var(--mono);font-size:12px">${nd?.pf!=null ? nd.pf.toFixed(1) : '—'}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${_asCol(asist)}">${asist!=null?asist+'%':'—'}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>
+        <td style="text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>
+        ${maCell}
+        <td style="white-space:nowrap;font-size:11px">${dot}${RISK_LABEL[lv]}</td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:20px">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;
+        letter-spacing:1px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border)">${courseName} · ${items.length} estudiante${items.length!==1?'s':''}</div>
+      <div style="overflow-x:auto">
+        <table class="std-table" style="font-size:12px">
+          <thead><tr>
+            <th style="text-align:left;min-width:170px">Estudiante</th>
+            ${thCols}
+            <th>PROM</th>
+            <th title="Asistencia %">ASIST.</th>
+            <th title="DIA Lectura (último período)">DIA LECT.</th>
+            <th title="DIA Matemática (último período)">DIA MAT.</th>
+            ${maTh}
+            <th>Estado</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('') + '<div class="table-note">Clic en nombre → perfil del estudiante · — sin dato</div>';
 }
 
 function setSegResumFilt(dim, val, btn) {
