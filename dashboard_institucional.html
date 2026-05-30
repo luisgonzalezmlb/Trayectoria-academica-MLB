@@ -1611,14 +1611,12 @@ function renderCurso() {
       <button class="filter-btn" onclick="setCursoFilter('sobre60',this)">Sobre 6.0 (${_nSobre60})</button>
       <button class="filter-btn" onclick="setCursoFilter('seguimiento',this)">Seguimiento (${_nSeguim})</button>
       <span style="width:1px;background:var(--border);display:inline-block;margin:0 6px;align-self:stretch"></span>
-      <div style="display:flex;flex-direction:column;gap:4px">
-        <span style="font-size:10px;font-family:var(--mono);color:var(--muted);
-          text-transform:uppercase;letter-spacing:1px">+ Info</span>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">
-          <button class="filter-btn" id="btn-curso-pie" onclick="setCursoPie(this)">PIE</button>
-          <button class="filter-btn" id="btn-curso-ext" onclick="setCursoExt(this)"
-            title="Agregar columnas DIA y Medición de avance">Resultados Externos</button>
-        </div>
+      <div style="position:relative;display:flex;gap:4px;flex-wrap:wrap">
+        <span style="position:absolute;top:-15px;left:0;font-size:10px;font-family:var(--mono);
+          color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap">+ Info</span>
+        <button class="filter-btn" id="btn-curso-pie" onclick="setCursoPie(this)">PIE</button>
+        <button class="filter-btn" id="btn-curso-ext" onclick="setCursoExt(this)"
+          title="Agregar columnas DIA y Medición de avance">Resultados Externos</button>
       </div>
       <button class="dia-toggle" onclick="printCurso()" style="margin-left:auto;padding:6px 14px;font-size:12px">Imprimir</button>
     </div>
