@@ -3418,22 +3418,15 @@ function _diaOaTableHtml(c) {
     return '<p style="color:var(--muted);font-size:13px">Sin datos de OA para este curso.</p>';
   }
 
-  // Función para una celda de OA
+  // Función para una celda de OA (estilo std-table: número coloreado, sin fondo)
   function oaCell(val, sinDia) {
     if(sinDia || val === undefined || val === null)
-      return '<td style="text-align:center;color:var(--muted);font-family:var(--mono);font-size:11px;padding:4px 6px">–</td>';
-    const col = diaColor(val);
-    return `<td style="text-align:center;font-family:var(--mono);font-size:12px;font-weight:600;
-      color:${col};padding:4px 6px;background:${col}11">${val.toFixed(0)}%</td>`;
+      return '<td style="color:var(--muted)">–</td>';
+    return `<td style="color:${diaColor(val)};font-weight:600">${val.toFixed(0)}%</td>`;
   }
 
-  // Cabecera de OA
-  const oaHeaders = oaCols.map(oa => {
-    const avgPct = c.oas?.[oa];
-    const col = avgPct != null ? diaColor(avgPct) : 'var(--muted)';
-    return `<th style="text-align:center;padding:4px 6px;font-size:10px;font-family:var(--mono);
-      color:${col};white-space:nowrap">${oa}</th>`;
-  }).join('');
+  // Cabecera de OA (uniforme, estilo std-table)
+  const oaHeaders = oaCols.map(oa => `<th>${oa}</th>`).join('');
 
   // Fila de promedio del curso
   const avgCells = oaCols.map(oa => oaCell(c.oas?.[oa], false)).join('');
@@ -3441,31 +3434,24 @@ function _diaOaTableHtml(c) {
   // Filas de estudiantes
   const studentRows = c.estudiantes.map(e => {
     const cells = oaCols.map(oa => oaCell(e.oas?.[oa], e.sin_dia)).join('');
-    const hasKey = !!e.key;
-    const nameLink = hasKey
-      ? `<a href="#" onclick="openStudent('${e.key}');return false"
-           style="color:var(--text);text-decoration:none" onmouseover="this.style.color='var(--accent)'"
-           onmouseout="this.style.color='var(--text)'">${e.nombre}</a>`
-      : e.nombre;
     const sinDiaBadge = e.sin_dia
       ? '<span style="font-size:9px;font-family:var(--mono);color:var(--muted);margin-left:4px">sin DIA</span>'
       : '';
-    return `<tr>
-      <td style="padding:4px 8px;white-space:nowrap;font-size:12px">${nameLink}${sinDiaBadge}</td>
+    const clickAttr = e.key ? ` onclick="openStudent('${e.key}')" style="cursor:pointer"` : '';
+    return `<tr${clickAttr}>
+      <td title="${e.nombre}">${e.nombre}${sinDiaBadge}</td>
       ${cells}
     </tr>`;
   }).join('');
 
-  // Conteo de logros por OA (para fila de resumen visual)
+  // Conteo de logros por OA
   const oaLogrado = oaCols.map(oa => {
     const vals = c.estudiantes
       .filter(e => !e.sin_dia && e.oas?.[oa] != null)
       .map(e => e.oas[oa]);
-    if(!vals.length) return '<td style="padding:2px 6px"></td>';
+    if(!vals.length) return '<td></td>';
     const nLogrado = vals.filter(v => v >= 80).length;
-    const pct = nLogrado / vals.length * 100;
-    return `<td style="text-align:center;padding:2px 6px;font-size:10px;font-family:var(--mono);
-      color:var(--muted)">${nLogrado}/${vals.length}</td>`;
+    return `<td style="font-size:10px;color:var(--muted)">${nLogrado}/${vals.length}</td>`;
   }).join('');
 
   const metaLine = (c.docente ? `<span style="font-weight:400;font-size:12px;color:var(--muted)"> · ${c.docente}</span>` : '') +
@@ -3481,22 +3467,21 @@ function _diaOaTableHtml(c) {
         % de respuestas correctas por Objetivo de Aprendizaje. Los OA evalúan aprendizajes
         previos del nivel anterior. Clic en el nombre del estudiante para ver su perfil.</p>
       <div style="overflow-x:auto">
-        <table class="tbl" style="font-size:12px;min-width:max-content">
+        <table class="std-table" style="min-width:max-content">
           <thead>
             <tr>
-              <th style="text-align:left;padding:4px 8px;white-space:nowrap">Estudiante</th>
+              <th style="min-width:180px">Estudiante</th>
               ${oaHeaders}
             </tr>
           </thead>
           <tbody>
-            <tr style="background:var(--surface);border-bottom:2px solid var(--border)">
-              <td style="padding:4px 8px;font-size:11px;font-weight:700;font-family:var(--mono);
-                color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Promedio curso</td>
+            <tr style="background:var(--surface)">
+              <td style="font-family:var(--mono);font-weight:700;color:var(--muted);
+                text-transform:uppercase;letter-spacing:.5px;font-size:11px">Promedio curso</td>
               ${avgCells}
             </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:2px 8px;font-size:10px;font-family:var(--mono);color:var(--muted)">
-                Logrado (≥80%)</td>
+            <tr>
+              <td style="font-family:var(--mono);color:var(--muted);font-size:10px">Logrado (≥80%)</td>
               ${oaLogrado}
             </tr>
             ${studentRows}
