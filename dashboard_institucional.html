@@ -1050,7 +1050,6 @@ function _applySegFilters() {
   const _asCol  = v => v==null?'var(--muted)':v>=85?'var(--green)':v>=75?'var(--yellow)':'var(--red)';
   const hasMa = Object.keys(MA).length > 0;
   const extDisplay = _segShowExt ? '' : 'none';
-  const maTh  = hasMa ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Medición de avance">MED.</th>` : '';
 
   // Agrupar por curso (gen), de menor a mayor grado (gen desc = grado asc)
   const byCourse = {};
@@ -1064,8 +1063,17 @@ function _applySegFilters() {
   container.innerHTML = courseEntries.map(({gen, items}) => {
     const courseName = _genToCurso[gen] ?? `Gen. ${gen}`;
     items.sort((a,b) => (_riskOrder[a.lv]??3) - (_riskOrder[b.lv]??3) || a.s.nombre.localeCompare(b.s.nombre));
-    const cols = (items[0]?.s.napsis[CUR_YEAR]?.col_map ?? []).filter(c => !c.np);
+    const cols = (items[0]?.s.napsis[CUR_YEAR]?.col_map ?? [])
+      .filter(c => !c.np && items.some(({s}) => s.napsis[CUR_YEAR]?.asignaturas?.[c.key] != null));
     const thCols = cols.map(c => `<th title="${c.label}">${c.short}</th>`).join('');
+    const hasDiaL = items.some(({s}) => _segDiaAvg(s,'lectura') != null);
+    const hasDiaM = items.some(({s}) => _segDiaAvg(s,'matematica') != null);
+    const hasMaCourse = hasMa && items.some(({s}) => _segMaEst(s) != null);
+    const extHeads = [
+      hasDiaL ? `<th class="seg-ext-col" style="display:${extDisplay}" title="DIA Lectura (último período)">DIA LECT.</th>` : '',
+      hasDiaM ? `<th class="seg-ext-col" style="display:${extDisplay}" title="DIA Matemática (último período)">DIA MAT.</th>` : '',
+      hasMaCourse ? `<th class="seg-ext-col" style="display:${extDisplay}" title="Medición de avance">MED.</th>` : '',
+    ].join('');
     const rows = items.map(({s, lv}) => {
       const nd = s.napsis[CUR_YEAR];
       const cells = cols.map(c => {
@@ -1076,15 +1084,17 @@ function _applySegFilters() {
       const diaL = _segDiaAvg(s,'lectura'); const diaM = _segDiaAvg(s,'matematica'); const maP = hasMa ? _segMaEst(s) : null;
       const pieSm = s.pie?.activo ? `<span class="pie-badge">PIE</span>` : '';
       const dot = `<span class="risk-dot-sm" style="background:${RISK_COLOR[lv]}"></span>`;
-      const maCell = hasMa ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_maCol(maP)}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>` : '';
+      const extCells = [
+        hasDiaL ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>` : '',
+        hasDiaM ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>` : '',
+        hasMaCourse ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_maCol(maP)}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>` : '',
+      ].join('');
       return `<tr>
         <td style="cursor:pointer;font-weight:600;font-size:12px" onclick="openStudent('${s.key}')">${s.nombre}${pieSm}</td>
         ${cells}
         <td class="pf-cell ${nc(nd?.pf??null)}" style="text-align:center;font-family:var(--mono);font-size:12px">${nd?.pf!=null ? nd.pf.toFixed(1) : '—'}</td>
         <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${_asCol(asist)}">${asist!=null?asist+'%':'—'}</td>
-        <td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>
-        <td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>
-        ${maCell}
+        ${extCells}
         <td style="white-space:nowrap;font-size:11px">${dot}${RISK_LABEL[lv]}</td>
       </tr>`;
     }).join('');
@@ -1098,9 +1108,7 @@ function _applySegFilters() {
             ${thCols}
             <th>PROM</th>
             <th title="Asistencia %">ASIST.</th>
-            <th class="seg-ext-col" style="display:${extDisplay}" title="DIA Lectura (último período)">DIA LECT.</th>
-            <th class="seg-ext-col" style="display:${extDisplay}" title="DIA Matemática (último período)">DIA MAT.</th>
-            ${maTh}
+            ${extHeads}
             <th>Estado</th>
           </tr></thead>
           <tbody>${rows}</tbody>
