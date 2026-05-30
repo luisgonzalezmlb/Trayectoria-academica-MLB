@@ -691,6 +691,24 @@ function toggleSegView(view) {
   bd.classList.toggle('active', view === 'detalle');
 }
 
+function goToSegDetalleCurso(gen) {
+  toggleSegView('detalle');
+  _segFiltTipo  = 'all';
+  _segFiltCurso = String(gen);
+  _segFiltNota  = 'all';
+  _segFiltPie   = false;
+
+  const cursoSel = document.getElementById('seg-filt-curso');
+  if(cursoSel) cursoSel.value = String(gen);
+
+  document.querySelectorAll('#seg-filt-tipo .filter-btn').forEach((b,i)=>b.classList.toggle('active', i===0));
+  document.querySelectorAll('#seg-filt-nota .filter-btn').forEach((b,i)=>b.classList.toggle('active', i===0));
+  document.getElementById('seg-filt-pie')?.classList.remove('active');
+
+  _applySegFilters();
+  document.getElementById('seg-detalle-view')?.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 function _buildSegRiskCard(s, lv) {
   const nd = s.napsis[CUR_YEAR];
   if(!nd) return '';
@@ -751,7 +769,7 @@ function renderSeguimiento() {
   // Vista Resumen: tabla por curso + tarjetas de estudiantes
   const resRows = CURSOS.map(c => {
     const t = c.alerta + c.activo + c.preventivo;
-    return `<tr onclick="goToCurso(${c.gen})" style="cursor:pointer" title="Ver detalle ${c.grade_name}">
+    return `<tr onclick="goToSegDetalleCurso(${c.gen})" style="cursor:pointer" title="Ver detalle de seguimiento · ${c.grade_name}">
       <td><strong style="color:var(--accent)">${c.grade_name}</strong></td>
       <td><span class="gen-badge">Gen. ${c.gen}</span></td>
       <td style="font-size:12px;color:var(--muted)">${c.teacher}</td>
