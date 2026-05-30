@@ -2909,24 +2909,28 @@ function renderEvstDia() {
               onclick="switchDiaSub('artic')">Articulación curricular</button>
       <button class="filter-btn" id="dia-sub-btn-transv"
               onclick="switchDiaSub('transv')">Análisis transversal</button>
+      <button class="filter-btn" id="dia-sub-btn-estudiantes"
+              onclick="switchDiaSub('estudiantes')">Resultados por estudiante</button>
     </div>
     <div id="dia-sub-resumen"></div>
-    <div id="dia-sub-artic"  style="display:none"></div>
-    <div id="dia-sub-transv" style="display:none"></div>`;
+    <div id="dia-sub-artic"       style="display:none"></div>
+    <div id="dia-sub-transv"      style="display:none"></div>
+    <div id="dia-sub-estudiantes" style="display:none"></div>`;
   switchDiaSub('resumen');
 }
 let _diaSub = 'resumen';
 function switchDiaSub(tab) {
   _diaSub = tab;
-  ['resumen','artic','transv'].forEach(t => {
+  ['resumen','artic','transv','estudiantes'].forEach(t => {
     const el  = document.getElementById('dia-sub-' + t);
     const btn = document.getElementById('dia-sub-btn-' + t);
     if(el)  el.style.display = t === tab ? '' : 'none';
     if(btn) btn.classList.toggle('active', t === tab);
   });
-  if(tab==='resumen' && !window._diaResumenDone) { renderDiaResumen(); window._diaResumenDone=true; }
-  if(tab==='artic'   && !window._diaArticDone)   { renderDiaArtic();   window._diaArticDone=true;   }
-  if(tab==='transv'  && !window._diaTransvDone)  { renderDiaTransv();  window._diaTransvDone=true;  }
+  if(tab==='resumen'     && !window._diaResumenDone)     { renderDiaResumen();     window._diaResumenDone=true;     }
+  if(tab==='artic'       && !window._diaArticDone)       { renderDiaArtic();       window._diaArticDone=true;       }
+  if(tab==='transv'      && !window._diaTransvDone)      { renderDiaTransv();      window._diaTransvDone=true;      }
+  if(tab==='estudiantes' && !window._diaEstudiantesDone) { renderDiaEstudiantes(); window._diaEstudiantesDone=true; }
 }
 
 // ── DIA Sub: Resumen ─────────────────────────────────────────
@@ -3249,6 +3253,158 @@ function renderDiaTransv() {
             '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
   container.innerHTML = html;
+}
+
+// ── DIA Sub: Resultados por estudiante ───────────────────────
+function renderDiaEstudiantes() {
+  const container = document.getElementById('dia-sub-estudiantes');
+  if(!DIA_MAT || !DIA_MAT.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos disponibles.</p>';
+    return;
+  }
+
+  // Selector de curso
+  const cursosConDatos = DIA_MAT.filter(c => c.estudiantes && c.estudiantes.length);
+  if(!cursosConDatos.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos de estudiantes disponibles.</p>';
+    return;
+  }
+
+  const opts = cursosConDatos.map((c,i) =>
+    `<option value="${i}">${c.short}</option>`
+  ).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+      <label style="font-size:12px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Curso</label>
+      <select id="dia-est-curso-sel" onchange="_renderDiaEstCurso()"
+        style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
+               background:var(--surface);color:var(--text);font-size:13px;cursor:pointer">
+        ${opts}
+      </select>
+      <div id="dia-est-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-left:auto">
+        ${[['≥80%','var(--green)','Logrado'],['60–80%','var(--accent)','En desarrollo'],
+            ['40–60%','var(--yellow)','Descendido'],['<40%','var(--red)','Desc. grave']].map(([rng,col,lbl]) =>
+          `<span style="font-size:10px;font-family:var(--mono);display:flex;align-items:center;gap:4px">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col}"></span>
+            ${rng} ${lbl}</span>`
+        ).join('')}
+      </div>
+    </div>
+    <div id="dia-est-content"></div>`;
+
+  _renderDiaEstCurso();
+}
+
+function _renderDiaEstCurso() {
+  const sel = document.getElementById('dia-est-curso-sel');
+  if(!sel) return;
+  const cursosConDatos = DIA_MAT.filter(c => c.estudiantes && c.estudiantes.length);
+  const c = cursosConDatos[parseInt(sel.value)];
+  if(!c) return;
+
+  const content = document.getElementById('dia-est-content');
+
+  // Obtener todos los OA presentes (unión de todos los estudiantes + promedios del curso)
+  const oaSet = new Set(Object.keys(c.oas || {}));
+  c.estudiantes.forEach(e => Object.keys(e.oas || {}).forEach(oa => oaSet.add(oa)));
+  const oaCols = Array.from(oaSet).sort((a,b) => {
+    const na = parseInt(a.replace('OA',''));
+    const nb = parseInt(b.replace('OA',''));
+    return na - nb;
+  });
+
+  if(!oaCols.length) {
+    content.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos de OA para este curso.</p>';
+    return;
+  }
+
+  // Función para una celda de OA
+  function oaCell(val, sinDia) {
+    if(sinDia || val === undefined || val === null)
+      return '<td style="text-align:center;color:var(--muted);font-family:var(--mono);font-size:11px;padding:4px 6px">–</td>';
+    const col = diaColor(val);
+    return `<td style="text-align:center;font-family:var(--mono);font-size:12px;font-weight:600;
+      color:${col};padding:4px 6px;background:${col}11">${val.toFixed(0)}%</td>`;
+  }
+
+  // Cabecera de OA
+  const oaHeaders = oaCols.map(oa => {
+    const avgPct = c.oas?.[oa];
+    const col = avgPct != null ? diaColor(avgPct) : 'var(--muted)';
+    return `<th style="text-align:center;padding:4px 6px;font-size:10px;font-family:var(--mono);
+      color:${col};white-space:nowrap">${oa}</th>`;
+  }).join('');
+
+  // Fila de promedio del curso
+  const avgCells = oaCols.map(oa => oaCell(c.oas?.[oa], false)).join('');
+
+  // Filas de estudiantes
+  const studentRows = c.estudiantes.map(e => {
+    const cells = oaCols.map(oa => oaCell(e.oas?.[oa], e.sin_dia)).join('');
+    const hasKey = !!e.key;
+    const nameLink = hasKey
+      ? `<a href="#" onclick="openStudent('${e.key}');return false"
+           style="color:var(--text);text-decoration:none" onmouseover="this.style.color='var(--accent)'"
+           onmouseout="this.style.color='var(--text)'">${e.nombre}</a>`
+      : e.nombre;
+    const sinDiaBadge = e.sin_dia
+      ? '<span style="font-size:9px;font-family:var(--mono);color:var(--muted);margin-left:4px">sin DIA</span>'
+      : '';
+    return `<tr>
+      <td style="padding:4px 8px;white-space:nowrap;font-size:12px">${nameLink}${sinDiaBadge}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  // Conteo de logros por OA (para fila de resumen visual)
+  const oaLogrado = oaCols.map(oa => {
+    const vals = c.estudiantes
+      .filter(e => !e.sin_dia && e.oas?.[oa] != null)
+      .map(e => e.oas[oa]);
+    if(!vals.length) return '<td style="padding:2px 6px"></td>';
+    const nLogrado = vals.filter(v => v >= 80).length;
+    const pct = nLogrado / vals.length * 100;
+    return `<td style="text-align:center;padding:2px 6px;font-size:10px;font-family:var(--mono);
+      color:var(--muted)">${nLogrado}/${vals.length}</td>`;
+  }).join('');
+
+  const metaLine = (c.docente ? `<span style="font-weight:400;font-size:12px;color:var(--muted)"> · ${c.docente}</span>` : '') +
+    (c.n_total != null ? `<span style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-left:12px">${c.n_total} est.</span>` : '') +
+    (c.pct_apoyo != null ? `<span style="font-size:11px;font-family:var(--mono);margin-left:12px;
+      color:${c.pct_apoyo >= 70 ? 'var(--red)' : c.pct_apoyo >= 40 ? 'var(--yellow)' : 'var(--accent)'}">
+      ${c.pct_apoyo.toFixed(1)}% requieren apoyo</span>` : '');
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="card-title">DIA Matemática · ${c.short} · Logro por OA${metaLine}</div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:14px">
+        % de respuestas correctas por Objetivo de Aprendizaje. Los OA evalúan aprendizajes
+        previos del nivel anterior. Clic en el nombre del estudiante para ver su perfil.</p>
+      <div style="overflow-x:auto">
+        <table class="tbl" style="font-size:12px;min-width:max-content">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;white-space:nowrap">Estudiante</th>
+              ${oaHeaders}
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background:var(--surface);border-bottom:2px solid var(--border)">
+              <td style="padding:4px 8px;font-size:11px;font-weight:700;font-family:var(--mono);
+                color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Promedio curso</td>
+              ${avgCells}
+            </tr>
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:2px 8px;font-size:10px;font-family:var(--mono);color:var(--muted)">
+                Logrado (≥80%)</td>
+              ${oaLogrado}
+            </tr>
+            ${studentRows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function _renderEvstDiaCourse(containerId, c, materia) {
