@@ -1589,6 +1589,14 @@ function renderCurso() {
   const _nSobre60 = students.filter(s => { const pf=s.napsis[CUR_YEAR]?.pf; return pf!=null&&pf>=6.0; }).length;
   const _nSeguim = students.filter(s => s.napsis[CUR_YEAR]?.risk).length;
 
+  // Columnas de resultados externos — solo mostrar si hay datos en el curso
+  const _extDiaL = students.some(s => _cursoDiaAvg(s,'lectura') != null);
+  const _extDiaM = students.some(s => _cursoDiaAvg(s,'matematica') != null);
+  const _extMA   = Object.keys(MA).length > 0 && students.some(s => _cursoMaEst(s) != null);
+  const _extJEG  = students.some(s => s.jeg && (Object.keys(s.jeg.cl||{}).length > 0 || Object.keys(s.jeg.ma||{}).length > 0));
+  const _hasAnyExt = _extDiaL || _extDiaM || _extMA || _extJEG;
+  window._cursoExtCols = {diaL:_extDiaL, diaM:_extDiaM, ma:_extMA, jeg:_extJEG};
+
   const html = `
   <div class="kpi-row">
     <div class="kpi"><div class="value ca">${curso.vigentes}</div><div class="desc">Vigentes</div></div>
@@ -1615,8 +1623,8 @@ function renderCurso() {
         <span style="position:absolute;top:-15px;left:0;font-size:10px;font-family:var(--mono);
           color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap">+ Info</span>
         <button class="filter-btn" id="btn-curso-pie" onclick="setCursoPie(this)">PIE</button>
-        <button class="filter-btn" id="btn-curso-ext" onclick="setCursoExt(this)"
-          title="Agregar columnas DIA y Medición de avance">Resultados Externos</button>
+        ${_hasAnyExt ? `<button class="filter-btn" id="btn-curso-ext" onclick="setCursoExt(this)"
+          title="Agregar columnas DIA, Medición y PAES">Resultados Externos</button>` : ''}
       </div>
       <button class="dia-toggle" onclick="printCurso()" style="margin-left:auto;padding:6px 14px;font-size:12px">Imprimir</button>
     </div>
@@ -1629,9 +1637,10 @@ function renderCurso() {
             ${active_cols.map(c=>`<th title="${c.label}" onclick="sortCurso('${c.key}',this)">${c.short}</th>`).join('')}
             <th onclick="sortCurso('pf',this)">PROM</th>
             <th onclick="sortCurso('asistencia',this)" title="Asistencia %">ASIST.</th>
-            <th class="curso-ext-col" style="display:none" title="DIA Lectura (último período)">DIA LECT.</th>
-            <th class="curso-ext-col" style="display:none" title="DIA Matemática (último período)">DIA MAT.</th>
-            ${Object.keys(MA).length?'<th class="curso-ext-col" style="display:none" title="Medición de avance (última)">MEDICIÓN</th>':''}
+            ${_extDiaL?'<th class="curso-ext-col" style="display:none" title="DIA Lectura (último período)">DIA LECT.</th>':''}
+            ${_extDiaM?'<th class="curso-ext-col" style="display:none" title="DIA Matemática (último período)">DIA MAT.</th>':''}
+            ${_extMA?'<th class="curso-ext-col" style="display:none" title="Medición de avance (última)">MEDICIÓN</th>':''}
+            ${_extJEG?'<th class="curso-ext-col" style="display:none" title="Último ensayo JEG · CL (puntaje PAES)">JEG CL</th><th class="curso-ext-col" style="display:none" title="Último ensayo JEG · MA (puntaje PAES)">JEG MA</th>':''}
             <th onclick="sortCurso('estado',this)" id="th-estado">Estado</th>
           </tr></thead>
           <tbody id="curso-tbody"></tbody>
@@ -1943,6 +1952,12 @@ function _cursoMaEst(s) {
     }
   } return null;
 }
+function _cursoJegLast(s, area) {
+  const entries = Object.entries(s.jeg?.[area] || {});
+  if(!entries.length) return null;
+  entries.sort((a,b) => a[0].localeCompare(b[0]));
+  return entries[entries.length-1][1];
+}
 function _applyCursoFilter() {
   const isResumen = _cursoFilter === 'resumen';
   const rv = document.getElementById('curso-resumen-view');
@@ -2111,17 +2126,27 @@ function renderCursoTable(students, active_cols) {
     const pieSm = s.pie?.activo ? `<span class="pie-badge">PIE</span>` : '';
     const asist = nd?.asistencia;
     const asistColor = asist==null ? 'var(--muted)' : asist>=85 ? 'var(--green)' : asist>=75 ? 'var(--yellow)' : 'var(--red)';
-    // Columnas de resultados externos (ocultas salvo toggle)
+    // Columnas de resultados externos (ocultas salvo toggle, solo columnas con datos)
+    const _ext = window._cursoExtCols || {};
     const _diaCell = v => {
       const col = v==null?'var(--muted)':v<40?'var(--red)':v<60?'var(--yellow)':v<80?'var(--accent)':'var(--green)';
       return `<td class="curso-ext-col" style="display:${_cursoShowExt?'':'none'};text-align:center;font-family:var(--mono);font-weight:600;color:${col}">${v!=null?v.toFixed(0)+'%':'—'}</td>`;
     };
     const diaL=_cursoDiaAvg(s,'lectura'); const diaM=_cursoDiaAvg(s,'matematica');
-    let extCells = _diaCell(diaL)+_diaCell(diaM);
-    if(Object.keys(MA).length) {
+    let extCells = '';
+    if(_ext.diaL) extCells += _diaCell(diaL);
+    if(_ext.diaM) extCells += _diaCell(diaM);
+    if(_ext.ma) {
       const maP=_cursoMaEst(s);
       const mcol = maP==null?'var(--muted)':maP<50?'var(--red)':maP<65?'var(--yellow)':'var(--green)';
       extCells += `<td class="curso-ext-col" style="display:${_cursoShowExt?'':'none'};text-align:center;font-family:var(--mono);font-weight:600;color:${mcol}">${maP!=null?maP.toFixed(0)+'%':'—'}</td>`;
+    }
+    if(_ext.jeg) {
+      const jCL = _cursoJegLast(s,'cl');
+      const jMA = _cursoJegLast(s,'ma');
+      const jCol = v => v==null?'var(--muted)':v<500?'var(--red)':v<600?'var(--yellow)':'var(--green)';
+      extCells += `<td class="curso-ext-col" style="display:${_cursoShowExt?'':'none'};text-align:center;font-family:var(--mono);font-weight:600;color:${jCol(jCL)}">${jCL!=null?jCL:'—'}</td>`;
+      extCells += `<td class="curso-ext-col" style="display:${_cursoShowExt?'':'none'};text-align:center;font-family:var(--mono);font-weight:600;color:${jCol(jMA)}">${jMA!=null?jMA:'—'}</td>`;
     }
     return `<tr onclick="openStudent('${s.key}')" style="cursor:pointer">
       <td title="${s.nombre}">${s.nombre}${pieSm}</td>
