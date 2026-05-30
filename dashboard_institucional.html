@@ -3037,6 +3037,13 @@ function renderDiaResumen() {
       ).join('')}
     </tr>`
   ).join('');
+  // Cursos con datos DIA (para el selector)
+  const cursosDia = CURSOS.filter(c => c.dia && _DIA_PERIODO_KEYS.some(p =>
+    (c.dia[p]?.lectura    && Object.keys(c.dia[p].lectura).length) ||
+    (c.dia[p]?.matematica && Object.keys(c.dia[p].matematica).length)
+  ));
+  const cursoOpts = cursosDia.map(c => `<option value="${c.gen}">${c.grade_name}</option>`).join('');
+
   let html = `
     <div class="card mb24">
       <div class="card-title">DIA · Resumen por Curso · ${CUR_YEAR}</div>
@@ -3048,34 +3055,53 @@ function renderDiaResumen() {
         <tbody>${tableRows}</tbody>
       </table></div>
     </div>`;
-  html += CURSOS.map(c => {
-    const hasDia = c.dia && _DIA_PERIODO_KEYS.some(p =>
-      (c.dia[p]?.lectura    && Object.keys(c.dia[p].lectura).length) ||
-      (c.dia[p]?.matematica && Object.keys(c.dia[p].matematica).length)
-    );
-    if(!hasDia) return '';
-    return `
-      <div class="card mb24">
-        <div class="card-title">DIA · ${c.grade_name} · detalle por ejes</div>
-        <div class="g2">
-          <div>
-            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Lectura</div>
-            <div id="evst-dia-lect-${c.gen}"></div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>
-            <div id="evst-dia-mat-${c.gen}"></div>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
+  if(cursosDia.length) {
+    html += `
+      <div style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <span style="font-size:11px;font-family:var(--mono);color:var(--muted);
+          letter-spacing:1px;text-transform:uppercase">Seleccionar curso</span>
+        <select class="course-select" id="dia-resumen-curso-sel" onchange="_renderDiaResumenCurso()">${cursoOpts}</select>
+      </div>
+      <div id="dia-resumen-detalle"></div>`;
+  }
   container.innerHTML = html;
-  CURSOS.forEach(c => {
-    _renderEvstDiaCourse(`evst-dia-lect-${c.gen}`, c, 'lectura');
-    _renderEvstDiaCourse(`evst-dia-mat-${c.gen}`,  c, 'matematica');
-  });
+  _renderDiaResumenCurso();
+}
+
+// Detalle del curso seleccionado en DIA · Resumen: barras por eje + tabla de OA
+function _renderDiaResumenCurso() {
+  const sel = document.getElementById('dia-resumen-curso-sel');
+  const detalle = document.getElementById('dia-resumen-detalle');
+  if(!sel || !detalle) return;
+  const gen = parseInt(sel.value);
+  const c = CURSOS.find(c => c.gen === gen);
+  if(!c) { detalle.innerHTML = ''; return; }
+
+  // OA: buscar el curso correspondiente en DIA_MAT por grade_name (== short)
+  const oaCurso = (DIA_MAT || []).find(d => d.short === c.grade_name && d.estudiantes && d.estudiantes.length);
+  const oaHtml = oaCurso ? _diaOaTableHtml(oaCurso) : '';
+
+  detalle.innerHTML = `
+    <div class="card mb24">
+      <div class="card-title">DIA · ${c.grade_name} · detalle por ejes</div>
+      <div class="g2">
+        <div>
+          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+            text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Lectura</div>
+          <div id="evst-dia-lect-${c.gen}"></div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+            text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>
+          <div id="evst-dia-mat-${c.gen}"></div>
+        </div>
+      </div>
+    </div>
+    ${oaHtml ? `<div class="mb24">${oaHtml}</div>`
+             : '<div class="card mb24"><p style="color:var(--muted);font-size:13px;margin:0">Sin detalle de OA por estudiante para este curso (solo disponible en Matemática con articulación).</p></div>'}`;
+
+  _renderEvstDiaCourse(`evst-dia-lect-${c.gen}`, c, 'lectura');
+  _renderEvstDiaCourse(`evst-dia-mat-${c.gen}`,  c, 'matematica');
 }
 
 // ── DIA Sub: Articulación curricular ─────────────────────────
@@ -3373,9 +3399,12 @@ function _renderDiaEstCurso() {
   const cursosConDatos = DIA_MAT.filter(c => c.estudiantes && c.estudiantes.length);
   const c = cursosConDatos[parseInt(sel.value)];
   if(!c) return;
-
   const content = document.getElementById('dia-est-content');
+  content.innerHTML = _diaOaTableHtml(c);
+}
 
+// Construye la tabla de logro de OA por estudiante para un curso de DIA_MAT
+function _diaOaTableHtml(c) {
   // Obtener todos los OA presentes (unión de todos los estudiantes + promedios del curso)
   const oaSet = new Set(Object.keys(c.oas || {}));
   c.estudiantes.forEach(e => Object.keys(e.oas || {}).forEach(oa => oaSet.add(oa)));
@@ -3386,8 +3415,7 @@ function _renderDiaEstCurso() {
   });
 
   if(!oaCols.length) {
-    content.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos de OA para este curso.</p>';
-    return;
+    return '<p style="color:var(--muted);font-size:13px">Sin datos de OA para este curso.</p>';
   }
 
   // Función para una celda de OA
@@ -3446,7 +3474,7 @@ function _renderDiaEstCurso() {
       color:${c.pct_apoyo >= 70 ? 'var(--red)' : c.pct_apoyo >= 40 ? 'var(--yellow)' : 'var(--accent)'}">
       ${c.pct_apoyo.toFixed(1)}% requieren apoyo</span>` : '');
 
-  content.innerHTML = `
+  return `
     <div class="card">
       <div class="card-title">DIA Matemática · ${c.short} · Logro por OA${metaLine}</div>
       <p style="font-size:11px;color:var(--muted);margin-bottom:14px">
