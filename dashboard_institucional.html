@@ -3010,83 +3010,131 @@ function renderDiaArtic() {
     container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos de articulación disponibles.</p>';
     return;
   }
+
+  // Barra de rendimiento inline (igual a DIA_Matematica_2026.html)
+  const _barHtml = v => {
+    const col = v >= 80 ? '#1e8449' : v >= 60 ? '#5b9fd4' : v >= 40 ? '#b7770d' : '#c0392b';
+    return '<div style="display:inline-block;vertical-align:middle;width:110px;height:8px;' +
+           'background:var(--surface);border-radius:3px;overflow:hidden">' +
+           '<div style="height:8px;border-radius:3px;width:' + v + '%;background:' + col + '"></div></div>';
+  };
+
   let html = `<p style="font-size:12px;color:var(--muted);margin-bottom:20px">
-    OA del nivel actual ordenados de menor a mayor rendimiento. Los OA bajo el umbral
-    (${DIA_UMBRAL}%) pueden expandirse para ver los aprendizajes previos
-    que deben consolidarse.</p>`;
+    OA del nivel actual ordenados de menor a mayor rendimiento.
+    Clic en cualquier fila para ver la descripción del OA, aprendizajes previos y preguntas DIA.</p>`;
 
   DIA_MAT.forEach((c, idx) => {
     if(!c.oas || !Object.keys(c.oas).length) return;
     const sorted = Object.entries(c.oas).sort((a,b) => a[1] - b[1]);
+    const n_desc = sorted.filter(([,v]) => v < DIA_UMBRAL).length;
+    const n_log  = sorted.filter(([,v]) => v >= 80).length;
 
-    let hdr = '<div class="card mb24"><div class="card-title">' + c.short;
-    if(c.docente) hdr += ' <span style="font-weight:400;color:var(--muted);font-size:13px"> · ' + c.docente + '</span>';
-    hdr += '<span style="float:right;font-size:11px;font-family:var(--mono);color:var(--muted)">' +
-           (c.n_total ?? '—') + ' est.&emsp;<span style="color:' +
-           (c.pct_apoyo >= 70 ? 'var(--red)' : c.pct_apoyo >= 40 ? 'var(--yellow)' : 'var(--accent)') + '">' +
-           (c.pct_apoyo != null ? c.pct_apoyo.toFixed(1) : '—') + '% requieren apoyo</span></span>' +
-           '</div>' +
-           '<table class="tbl" style="font-size:12px"><thead><tr>' +
-           '<th style="width:70px">OA</th><th>Descripción del OA actual</th>' +
-           '<th style="text-align:center;width:90px">% Prom.</th>' +
-           '<th style="text-align:center;width:120px">Estado</th>' +
+    let hdr = '<div class="card mb24">';
+    hdr += '<div class="card-title" style="display:flex;justify-content:space-between;align-items:baseline">' +
+           '<span>' + c.short + (c.docente ? ' <span style="font-weight:400;color:var(--muted);font-size:12px;font-family:var(--sans)"> · ' + c.docente + '</span>' : '') + '</span>' +
+           '<span style="font-size:11px;font-family:var(--mono);color:var(--muted)">' +
+           (c.n_total ?? '—') + ' est. &nbsp;·&nbsp; ' +
+           '<span style="color:' + (c.pct_apoyo >= 70 ? 'var(--red)' : c.pct_apoyo >= 40 ? 'var(--yellow)' : 'var(--accent)') + '">' +
+           (c.pct_apoyo != null ? c.pct_apoyo.toFixed(1) : '—') + '% requieren apoyo</span>' +
+           '</span></div>';
+
+    // Mini KPIs de OA descendidos / logrados
+    hdr += '<div style="display:flex;gap:16px;margin-bottom:14px">' +
+           '<span style="font-size:11px;font-family:var(--mono);color:var(--red)">▼ ' + n_desc + ' OA bajo umbral</span>' +
+           '<span style="font-size:11px;font-family:var(--mono);color:var(--green)">▲ ' + n_log + ' OA logrados</span>' +
+           '</div>';
+
+    hdr += '<table class="tbl" style="font-size:12px"><thead><tr>' +
+           '<th style="width:80px">OA</th>' +
+           '<th style="text-align:center;width:100px">% Correcto</th>' +
+           '<th style="width:130px">Rendimiento</th>' +
+           '<th style="text-align:center;width:130px">Estado</th>' +
            '</tr></thead><tbody>';
     html += hdr;
 
     sorted.forEach(([oa, pct]) => {
-      const isWeak  = pct < DIA_UMBRAL;
-      const col     = diaColor(pct);
-      const label   = pct < 40 ? 'Desc. grave' : pct < 60 ? 'Descendido' : pct < 80 ? 'En desarrollo' : 'Logrado';
-      const info    = c.oa_info && c.oa_info[oa];
-      const hasPrev = isWeak && Array.isArray(info?.prev) && info.prev.length > 0;
-      const rid     = 'artic-' + idx + '-' + oa;
-      const descFull  = (OA_DESC && OA_DESC[c.curso] && OA_DESC[c.curso][oa]) || '';
-      const descShort = descFull.length > 130 ? descFull.slice(0,130) + '…' : descFull;
+      const col      = diaColor(pct);
+      const label    = pct < 40 ? 'Desc. grave' : pct < 60 ? 'Descendido' : pct < 80 ? 'En desarrollo' : 'Logrado';
+      const info     = c.oa_info && c.oa_info[oa];
+      const descFull = (OA_DESC && OA_DESC[c.curso] && OA_DESC[c.curso][oa]) || '';
+      const hasDet   = !!(descFull || (Array.isArray(info?.prev) && info.prev.length));
+      const rid      = 'artic-' + idx + '-' + oa.replace(/\s/g,'_');
 
-      html += '<tr' + (hasPrev ? ' onclick="toggleArticRow(\'' + rid + '\')" style="cursor:pointer"' : '') + '>' +
-              '<td style="white-space:nowrap"><strong style="font-family:var(--mono);color:' + col + '">' + oa + '</strong>' +
-              (hasPrev ? '<span id="arr-' + rid + '" style="font-size:9px;margin-left:5px;color:var(--muted)">▶</span>' : '') +
+      // Fila principal
+      html += '<tr class="oa-data-row"' +
+              (hasDet ? ' onclick="toggleArticRow(\'' + rid + '\')" style="cursor:pointer"' : '') + '>' +
+              '<td style="white-space:nowrap">' +
+              '<strong style="font-family:var(--mono);font-size:13px;color:' + col + '">' + oa + '</strong>' +
+              (hasDet ? '<span id="arr-' + rid + '" style="font-size:9px;margin-left:6px;color:var(--muted);transition:transform .2s;display:inline-block">▶</span>' : '') +
               '</td>' +
-              '<td style="color:var(--muted);font-size:11px">' + descShort + '</td>' +
-              '<td style="text-align:center"><span style="font-family:var(--mono);font-weight:700;color:' + col + '">' + pct.toFixed(1) + '%</span></td>' +
-              '<td style="text-align:center"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;' +
-              'background:' + col + '22;color:' + col + ';font-weight:600">' + label + '</span></td>' +
+              '<td style="text-align:center">' +
+              '<span style="font-family:var(--mono);font-size:14px;font-weight:700;color:' + col + '">' + pct.toFixed(1) + '%</span>' +
+              '</td>' +
+              '<td>' + _barHtml(pct) + '</td>' +
+              '<td style="text-align:center">' +
+              '<span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:10px;font-family:var(--mono);font-weight:600;' +
+              'background:' + col + '22;color:' + col + '">' + label + '</span>' +
+              '</td>' +
               '</tr>';
 
-      if(hasPrev) {
-        html += '<tr id="' + rid + '" style="display:none">' +
-                '<td colspan="4" style="background:rgba(26,82,118,.03);padding:0">' +
-                '<div style="padding:12px 16px 12px 28px">' +
-                '<div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:10px;' +
-                'text-transform:uppercase;letter-spacing:.5px">Aprendizajes previos a consolidar para ' + oa + '</div>';
+      // Fila de detalle (desplegable)
+      if(hasDet) {
+        let dp = '';
 
-        info.prev.forEach(prev => {
-          const n_ant      = parseInt(prev.oa.replace('OA',''));
-          const pregsMatch = (c.preguntas || []).filter(p =>
-            Array.isArray(p.oa_actual) && p.oa_actual.includes(oa) &&
-            p.n_oa_ant === n_ant && p.nivel_ant === prev.nivel
-          );
-          html += '<div style="margin-bottom:12px;padding:10px 12px;' +
-                  'border-left:3px solid var(--accent);background:var(--surface);border-radius:0 6px 6px 0">' +
-                  '<div style="font-size:12px;font-weight:700;margin-bottom:6px">' +
+        // Descripción completa del OA
+        if(descFull) {
+          dp += '<div style="font-size:10px;font-family:var(--mono);letter-spacing:1px;color:var(--muted);' +
+                'text-transform:uppercase;margin-bottom:4px">OA ' + oa + ' · ' + c.short + ' · Bases Curriculares MINEDUC</div>' +
+                '<div style="font-size:12px;color:var(--text);line-height:1.65;margin-bottom:10px">' + descFull + '</div>';
+        }
+
+        // Aprendizajes previos + indicadores
+        if(Array.isArray(info?.prev) && info.prev.length) {
+          dp += '<div style="font-size:10px;font-family:var(--mono);letter-spacing:1px;color:var(--muted);' +
+                'text-transform:uppercase;margin-bottom:8px' + (descFull ? ';margin-top:4px' : '') + '">' +
+                'Aprendizajes previos evaluados</div>';
+
+          info.prev.forEach(prev => {
+            const n_ant      = parseInt(prev.oa.replace('OA',''));
+            const pregsMatch = (c.preguntas || []).filter(p =>
+              Array.isArray(p.oa_actual) && p.oa_actual.includes(oa) &&
+              p.n_oa_ant === n_ant && p.nivel_ant === prev.nivel
+            );
+            dp += '<div style="margin-bottom:10px;padding:9px 12px;border-left:3px solid var(--accent);' +
+                  'background:var(--surface);border-radius:0 6px 6px 0">' +
+                  '<div style="font-size:12px;font-weight:700;margin-bottom:5px">' +
                   prev.oa + ' · ' + prev.nivel +
-                  '<span style="font-weight:400;font-size:10px;color:var(--muted);margin-left:6px;' +
-                  'font-family:var(--mono)">' + prev.eje + '</span></div>';
-          if(pregsMatch.length) {
-            pregsMatch.forEach(p => {
-              html += '<div style="margin:4px 0;padding:4px 8px;font-size:11px;line-height:1.5;' +
+                  '<span style="font-weight:400;font-size:10px;color:var(--muted);margin-left:6px;font-family:var(--mono)">' +
+                  prev.eje + '</span></div>';
+            if(pregsMatch.length) {
+              pregsMatch.forEach(p => {
+                dp += '<div style="margin:3px 0;padding:4px 8px;font-size:11px;line-height:1.5;' +
                       'border-left:1px solid var(--border);color:var(--text)">' +
-                      '<span style="font-size:9px;color:var(--muted);font-family:var(--mono)">' +
-                      'Preg. ' + p.n_preg + ' · ' + p.habilidad + '</span><br>' +
-                      p.indicador + '</div>';
-            });
-          } else {
-            html += '<div style="font-size:11px;color:var(--muted);font-style:italic">Indicador no disponible</div>';
-          }
-          html += '</div>';
-        });
+                      '<span style="font-size:9px;color:var(--muted);font-family:var(--mono)">Preg. ' +
+                      p.n_preg + ' · ' + p.habilidad + '</span><br>' + p.indicador + '</div>';
+              });
+            } else {
+              // Mostrar solo los números de pregunta si los hay
+              const pregsOA = (info.preguntas || []);
+              if(pregsOA.length) {
+                dp += '<div style="font-size:11px;font-family:var(--mono);color:var(--accent)">Preguntas: ' +
+                      pregsOA.join(', ') + '</div>';
+              } else {
+                dp += '<div style="font-size:11px;color:var(--muted);font-style:italic">Indicador no disponible</div>';
+              }
+            }
+            dp += '</div>';
+          });
+        } else if(info?.preguntas?.length) {
+          // Sin prev pero con números de pregunta
+          dp += '<div style="font-size:11px;font-family:var(--mono);color:var(--accent);margin-top:6px">' +
+                'Preguntas DIA: ' + info.preguntas.join(', ') + '</div>';
+        }
 
-        html += '</div></td></tr>';
+        html += '<tr id="' + rid + '" style="display:none">' +
+                '<td colspan="4" style="padding:0;background:rgba(26,82,118,.03)">' +
+                '<div style="padding:12px 16px 14px 28px;border-top:1px dashed var(--border)">' +
+                dp + '</div></td></tr>';
       }
     });
     html += '</tbody></table></div>';
@@ -3100,7 +3148,10 @@ function toggleArticRow(rid) {
   if(!row) return;
   const hidden = row.style.display === 'none';
   row.style.display = hidden ? '' : 'none';
-  if(arr) arr.textContent = hidden ? '▼' : '▶';
+  if(arr) {
+    arr.style.transform = hidden ? 'rotate(90deg)' : '';
+    arr.textContent = '▶';
+  }
 }
 
 // ── DIA Sub: Análisis transversal ────────────────────────────
