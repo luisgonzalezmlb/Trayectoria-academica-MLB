@@ -291,6 +291,14 @@
 
 <!-- ══════════════════ MEDICIÓN DE AVANCE ══════════════════ -->
 <div class="tab-content" id="tab-medicion">
+  <div id="ma-selectors" style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    <span id="ma-asig-lbl" style="font-size:11px;font-family:var(--mono);color:var(--muted);
+      letter-spacing:1px;text-transform:uppercase;">Asignatura</span>
+    <select class="course-select" id="ma-asig-sel" onchange="_maOnAsigChange()" style="min-width:160px"></select>
+    <span style="font-size:11px;font-family:var(--mono);color:var(--muted);
+      letter-spacing:1px;text-transform:uppercase;">Medición</span>
+    <select class="course-select" id="ma-eval-sel" onchange="renderMedicionAvance()" style="min-width:200px"></select>
+  </div>
   <div id="medicion-content"></div>
 </div>
 
@@ -371,7 +379,7 @@ function showTab(id, btn) {
   if(id==='cursos'       && !window._cursosInit)   { initCursos();       window._cursosInit=true; }
   if(id==='seguimiento'  && !window._segInit)       { renderSeguimiento(); window._segInit=true; }
   if(id==='asignaturas'  && !window._asigInit)      { initAsignaturas();      window._asigInit=true; }
-  if(id==='medicion'     && !window._medicionInit)  { renderMedicionAvance(); window._medicionInit=true; }
+  if(id==='medicion'     && !window._medicionInit)  { initMedicion(); window._medicionInit=true; }
   if(id==='evst'         && !window._evstInit)      { switchEvstTab('dia');   window._evstInit=true; }
 }
 function goToCurso(gen) {
@@ -3611,236 +3619,95 @@ function _maEvalStats(ev) {
 }
 
 // ════════════════════════════════════════════════════════════
-// PESTAÑA MEDICIÓN DE AVANCE — rediseño con selector de curso
+// PESTAÑA MEDICIÓN DE AVANCE
 // ════════════════════════════════════════════════════════════
+
+// ── Inicialización: pobla selectores una sola vez ─────────────
+function initMedicion() {
+  const asigs = Object.keys(MA);
+  const asigSel = document.getElementById('ma-asig-sel');
+  if (!asigs.length) {
+    document.getElementById('medicion-content').innerHTML =
+      '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos de medición de avance disponibles.</p>';
+    document.getElementById('ma-selectors').style.display = 'none';
+    return;
+  }
+  asigs.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a; opt.textContent = a;
+    asigSel.appendChild(opt);
+  });
+  // Ocultar selector asig si solo hay una
+  if (asigs.length === 1) {
+    document.getElementById('ma-asig-lbl').style.display = 'none';
+    asigSel.style.display = 'none';
+  }
+  _maOnAsigChange();
+}
+
+function _maOnAsigChange() {
+  const asig = document.getElementById('ma-asig-sel').value || Object.keys(MA)[0];
+  const evals = MA[asig] || [];
+  const evalSel = document.getElementById('ma-eval-sel');
+  evalSel.innerHTML = '';
+  evals.forEach((ev, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${ev.nombre} · ${ev.año}`;
+    evalSel.appendChild(opt);
+  });
+  renderMedicionAvance();
+}
 
 function renderMedicionAvance() {
   const container = document.getElementById('medicion-content');
-  const asigs = Object.keys(MA);
 
-  if (!asigs.length) {
-    container.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos de medición de avance disponibles.</p>';
+  // Destruir gráficos previos
+  if (!window._maCharts) window._maCharts = [];
+  window._maCharts.forEach(c => c.destroy());
+  window._maCharts = [];
+
+  const asig = document.getElementById('ma-asig-sel')?.value || Object.keys(MA)[0];
+  const evalIdx = parseInt(document.getElementById('ma-eval-sel')?.value ?? '0');
+  const ev = MA[asig]?.[evalIdx];
+
+  if (!ev) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos para esta medición.</p>';
     return;
   }
 
   const estMap = {};
   EST.forEach(e => { estMap[e.key] = e; });
-  window._maEstMap   = estMap;
-  window._maCharts   = {};
-  window._maDoneDet  = {};
-  window._maDoneRes  = {};
+  window._maEstMap = estMap;
 
-  let html = '';
+  const st       = _maEvalStats(ev);
+  const coverage = st.allListed ? (100 * st.measured.length / st.allListed) : 0;
+  const avgTxt   = st.avg !== null ? st.avg.toFixed(1) + '%' : '—';
 
-  // ── Selector de asignatura (si hay más de una) ────────────
-  if (asigs.length > 1) {
-    html += '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap" id="ma-asig-btns">';
-    asigs.forEach((a, i) => {
-      html += `<button class="filter-btn${i===0?' active':''}" onclick="_maSwitchAsig(${i},this)">${a}</button>`;
-    });
-    html += '</div>';
-  }
+  // ── KPI row ───────────────────────────────────────────────
+  let html = `<div class="kpi-row">
+    <div class="kpi"><div class="value ca">${ev.cursos.length}</div><div class="desc">Cursos</div></div>
+    <div class="kpi"><div class="value ${_maColor(st.avg)}">${avgTxt}</div><div class="desc">Promedio institución</div></div>
+    <div class="kpi"><div class="value cr">${st.critical}</div><div class="desc">Estudiantes bajo 50%</div></div>
+    <div class="kpi"><div class="value cy">${st.lowCourses}</div><div class="desc">Cursos bajo 50%</div></div>
+    <div class="kpi"><div class="value ca">${coverage.toFixed(0)}%</div><div class="desc">Cobertura</div></div>
+  </div>`;
 
-  asigs.forEach((asig, ai) => {
-    // Recopilar cursos presentes en los datos de esta asig
-    const seenGens = new Set();
-    const maGens   = [];
-    MA[asig].forEach(ev => {
-      ev.cursos.forEach(c => {
-        if (!seenGens.has(c.gen)) {
-          seenGens.add(c.gen);
-          maGens.push({ gen: c.gen, grade_name: c.grade_name });
-        }
-      });
-    });
-    maGens.sort((a,b) => a.gen - b.gen);
-
-    // Cursos del año actual sin datos en esta asig (template)
-    const allCursos = CURSOS.filter(c => !seenGens.has(c.gen));
-
-    // Opciones del selector: primero los que tienen datos, luego los demás
-    const optsMedicion = maGens.map(c =>
-      `<option value="${c.gen}">${c.grade_name}</option>`
-    ).join('');
-    const optsTemplate = allCursos.map(c =>
-      `<option value="${c.gen}" style="color:var(--muted)">${c.grade_name} (sin datos)</option>`
-    ).join('');
-
-    html += `<div id="ma-asig-${ai}"${ai > 0 ? ' style="display:none"' : ''}>`;
-
-    // ── Controles: selector de curso + toggle Resumen/Detalle ──
-    html += `
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap">
-        <select class="course-select" id="ma-curso-sel-${ai}"
-          onchange="_maOnCursoChange(${ai})" style="min-width:200px">
-          ${optsMedicion}${optsTemplate}
-        </select>
-        <div style="display:flex;gap:6px" id="ma-view-btns-${ai}">
-          <button class="filter-btn active" id="ma-btn-res-${ai}"
-            onclick="_maSetView('resumen',${ai})">Resumen</button>
-          <button class="filter-btn" id="ma-btn-det-${ai}"
-            onclick="_maSetView('detalle',${ai})">Detalle</button>
-        </div>
-      </div>
-      <div id="ma-view-res-${ai}"></div>
-      <div id="ma-view-det-${ai}" style="display:none"></div>`;
-
-    html += '</div>';
-  });
-
-  container.innerHTML = html;
-
-  // Render inicial: solo el primer asig (evita dibujar charts en divs ocultos)
-  if (asigs.length) _maOnCursoChange(0);
-}
-
-// ── Cambio de asignatura ──────────────────────────────────────
-function _maSwitchAsig(idx, btn) {
-  document.querySelectorAll('[id^="ma-asig-"]').forEach((el, i) => {
-    el.style.display = i === idx ? '' : 'none';
-  });
-  const asigBtns = document.querySelectorAll('#ma-asig-btns .filter-btn');
-  asigBtns.forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-
-  // Init si todavía no se ha renderizado
-  if (!window._maDoneRes?.[idx] && !window._maDoneDet?.[idx]) {
-    _maOnCursoChange(idx);
-  }
-}
-
-// ── Cambio de curso ────────────────────────────────────────────
-function _maOnCursoChange(ai) {
-  const asig = Object.keys(MA)[ai];
-  const sel  = document.getElementById(`ma-curso-sel-${ai}`);
-  if (!sel) return;
-  const gen  = parseInt(sel.value);
-
-  // Destruir gráficos previos
-  if (!window._maCharts) window._maCharts = {};
-  (window._maCharts[ai] || []).forEach(c => c.destroy());
-  window._maCharts[ai] = [];
-  if (!window._maDoneRes) window._maDoneRes = {};
-  if (!window._maDoneDet) window._maDoneDet = {};
-  delete window._maDoneRes[ai];
-  delete window._maDoneDet[ai];
-
-  const estMap = window._maEstMap;
-  const isResumen = (document.getElementById(`ma-view-det-${ai}`)?.style.display === 'none');
-
-  _maBuildResumenHTML(asig, ai, gen, estMap);
-  _maBuildDetalleHTML(asig, ai, gen, estMap);
-
-  if (isResumen) _maDrawResumenCharts(asig, ai, gen);
-  else           _maDrawDetalleCharts(asig, ai, gen);
-}
-
-// ── Toggle Resumen / Detalle ──────────────────────────────────
-function _maSetView(view, ai) {
-  const res = document.getElementById(`ma-view-res-${ai}`);
-  const det = document.getElementById(`ma-view-det-${ai}`);
-  if (res) res.style.display = view === 'resumen' ? '' : 'none';
-  if (det) det.style.display = view === 'detalle'  ? '' : 'none';
-
-  const btnRes = document.getElementById(`ma-btn-res-${ai}`);
-  const btnDet = document.getElementById(`ma-btn-det-${ai}`);
-  if (btnRes) btnRes.classList.toggle('active', view === 'resumen');
-  if (btnDet) btnDet.classList.toggle('active', view === 'detalle');
-
-  const asig = Object.keys(MA)[ai];
-  const sel  = document.getElementById(`ma-curso-sel-${ai}`);
-  const gen  = sel ? parseInt(sel.value) : null;
-  if (gen === null) return;
-
-  if (view === 'resumen' && !window._maDoneRes?.[ai]) {
-    _maDrawResumenCharts(asig, ai, gen);
-  }
-  if (view === 'detalle' && !window._maDoneDet?.[ai]) {
-    _maDrawDetalleCharts(asig, ai, gen);
-  }
-}
-
-// ── HTML vista Resumen (curso seleccionado) ───────────────────
-function _maBuildResumenHTML(asig, ai, gen, estMap) {
-  const el = document.getElementById(`ma-view-res-${ai}`);
-  if (!el) return;
-
-  const evals = MA[asig] || [];
-  const gradeName = (evals.flatMap(e => e.cursos).find(c => c.gen === gen)?.grade_name)
-    || CURSOS.find(c => c.gen === gen)?.grade_name || '';
-
-  // Caso: curso sin datos (template con lista de estudiantes)
-  const hasDatos = evals.some(ev => ev.cursos.some(c => c.gen === gen));
-  if (!hasDatos) {
-    const courseStudents = EST.filter(s => s.gen === gen && s.napsis?.[CUR_YEAR]);
-    let html = `<div class="card mb24">
-      <div class="card-title">${gradeName} · ${asig} · Sin datos de medición</div>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
-        No hay resultados de ZipGrade para este curso aún.
-        Lista de estudiantes del curso (${courseStudents.length}):
-      </p>
-      <div style="overflow-x:auto"><table class="summary-table">
-        <thead><tr>
-          <th style="text-align:left">Estudiante</th>
-          <th style="text-align:center">Nota Mat.</th>
-          <th style="text-align:center">DIA Mat.</th>
+  // ── Tabla de cursos (resumen institucional) ───────────────
+  html += `<div class="card mb24">
+    <div class="card-title">${ev.nombre} · ${asig} · ${ev.año}</div>
+    <div style="overflow-x:auto">
+      <table class="subj-table" style="font-size:12px;width:100%">
+        <thead><tr style="font-size:10px">
+          <th style="text-align:left;min-width:140px">Curso</th>
+          <th title="Estudiantes con datos">N°</th>
+          <th>% Prom.</th>
+          <th>Distribución</th>
+          <th style="text-align:left">Ejes</th>
         </tr></thead><tbody>`;
-    courseStudents.forEach(s => {
-      const nm = s.napsis?.[CUR_YEAR]?.asignaturas?.['MATEMÁTICA'] ?? null;
-      let diaVal = null;
-      const dy = s.dia?.[CUR_YEAR];
-      for (const p of ['cierre','monitoreo','diagnostico']) {
-        const mat = dy?.[p]?.matematica;
-        if (mat) { const v = Object.values(mat).filter(x=>x!=null); if(v.length){diaVal=v.reduce((a,b)=>a+b,0)/v.length;break;} }
-      }
-      const nameHtml = `<a href="#" onclick="openStudent('${s.key}');showTab('estudiantes',document.querySelector('nav button:nth-child(3)'));return false" style="color:var(--accent)">${s.nombre}</a>`;
-      html += `<tr>
-        <td>${nameHtml}</td>
-        <td style="text-align:center;font-family:var(--mono);color:${nm!==null?(nm<4?'var(--red)':nm<5?'var(--yellow)':'var(--green)'):'var(--muted)'}">
-          ${nm!==null?nm.toFixed(1):'—'}</td>
-        <td style="text-align:center;font-family:var(--mono);color:${diaVal!==null?_maColor(diaVal):'var(--muted)'}">
-          ${diaVal!==null?diaVal.toFixed(1)+'%':'—'}</td>
-      </tr>`;
-    });
-    html += '</tbody></table></div></div>';
-    el.innerHTML = html;
-    return;
-  }
 
-  // Mediciones con datos para este curso
-  const cursoEvals = evals.map((ev, ei) => {
-    const c = ev.cursos.find(c => c.gen === gen);
-    return c ? { ev, ei, c } : null;
-  }).filter(Boolean);
-
-  const latest = cursoEvals[cursoEvals.length - 1];
-  const first  = cursoEvals[0];
-  const trend  = cursoEvals.length > 1 ? (latest.c.prom_pct - first.c.prom_pct) : null;
-  const trendTxt = trend !== null
-    ? `${trend >= 0 ? '↑' : '↓'} ${Math.abs(trend).toFixed(1)}%`
-    : '—';
-  const trendCol = trend === null ? 'var(--muted)' : (trend >= 0 ? 'var(--green)' : 'var(--red)');
-
-  let html = `<div class="card mb24">
-    <div class="card-title">${gradeName} · ${asig} · Trayectoria de mediciones</div>
-    <div class="kpi-grid" style="margin-bottom:18px">
-      <div class="kpi"><div class="value ca">${cursoEvals.length}</div><div class="desc">Mediciones</div></div>
-      <div class="kpi"><div class="value ${_maColor(latest.c.prom_pct)}">${latest.c.prom_pct.toFixed(1)}%</div><div class="desc">Último resultado</div></div>
-      <div class="kpi"><div class="value" style="color:${trendCol}">${trendTxt}</div><div class="desc">Tendencia</div></div>
-      <div class="kpi"><div class="value ca">${latest.c.n_curso||latest.c.n}</div><div class="desc">Estudiantes en curso</div></div>
-    </div>`;
-
-  // Tabla resumen por medición
-  html += `<div style="overflow-x:auto"><table class="summary-table">
-    <thead><tr>
-      <th style="text-align:left">Medición</th>
-      <th style="text-align:center">N° con datos</th>
-      <th style="text-align:center">% promedio</th>
-      <th style="text-align:center">Distribución</th>
-      <th style="text-align:left">Ejes</th>
-    </tr></thead><tbody>`;
-
-  cursoEvals.forEach(({ ev, c }) => {
+  ev.cursos.forEach(c => {
+    const col    = _maColor(c.prom_pct);
     const counts = _maLevelCounts(_maMeasuredStudents(c));
     const nLabel = c.n_curso && c.n_curso !== c.n ? `${c.n}/${c.n_curso}` : String(c.n);
     let ejeTags = '';
@@ -3853,311 +3720,273 @@ function _maBuildResumenHTML(asig, ai, gen, estMap) {
           ${e.nombre} ${e.prom_pct.toFixed(0)}%</span>`
       ).join('');
     }
-    html += `<tr>
-      <td><strong>${ev.nombre}</strong><span style="color:var(--muted);font-size:11px;margin-left:8px">${ev.año}</span></td>
+    html += `<tr style="cursor:pointer" onclick="_maOpenCursoPanel(${c.gen})">
+      <td style="font-weight:600;color:var(--accent)">${c.grade_name}</td>
       <td style="text-align:center;font-family:var(--mono)">${nLabel}</td>
-      <td style="text-align:center;color:${_maColor(c.prom_pct)};font-weight:700;font-size:15px;font-family:var(--mono)">${c.prom_pct.toFixed(1)}%</td>
+      <td style="text-align:center;color:${col};font-weight:700;font-size:15px;
+          font-family:var(--mono)">${c.prom_pct.toFixed(1)}%</td>
       <td style="text-align:center">${_maDistBar(counts)}</td>
-      <td style="font-size:11px">${ejeTags||'<span style="color:var(--muted)">—</span>'}</td>
+      <td style="font-size:11px">${ejeTags || '<span style="color:var(--muted)">—</span>'}</td>
     </tr>`;
   });
-  html += '</tbody></table></div>';
 
-  // Gráfico de evolución (solo si hay más de 1 medición)
-  if (cursoEvals.length > 1) {
-    html += `<div style="margin-top:20px">
-      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Evolución del promedio</div>
-      <div style="height:160px;position:relative"><canvas id="ma-trend-${ai}"></canvas></div>
-    </div>`;
+  html += `</tbody></table></div>
+    <div class="table-note">Clic en un curso para ver el detalle de estudiantes</div>
+    <div id="ma-curso-panel"></div>
+  </div>`;
+
+  // ── Gráficos institucionales (barras + donut) ─────────────
+  html += `<div class="g2 mb24" style="gap:28px">
+    <div>
+      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+        text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Promedio por curso</div>
+      <div style="height:${Math.max(180, ev.cursos.length * 28)}px;position:relative">
+        <canvas id="ma-course-chart"></canvas>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+        text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Distribución de logro</div>
+      <div style="height:190px;position:relative">
+        <canvas id="ma-dist-chart"></canvas>
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:8px">
+        Más descendido: <strong style="color:${_maColor(st.weakest?.prom_pct)}">
+          ${st.weakest ? st.weakest.grade_name+' · '+st.weakest.prom_pct.toFixed(1)+'%' : '—'}
+        </strong><br>
+        Más alto: <strong style="color:${_maColor(st.strongest?.prom_pct)}">
+          ${st.strongest ? st.strongest.grade_name+' · '+st.strongest.prom_pct.toFixed(1)+'%' : '—'}
+        </strong>
+      </div>
+    </div>
+  </div>`;
+
+  container.innerHTML = html;
+
+  // ── Dibujar gráficos ──────────────────────────────────────
+  const courseCtx = document.getElementById('ma-course-chart');
+  if (courseCtx) {
+    const ch = new Chart(courseCtx, {
+      type: 'bar',
+      data: {
+        labels: ev.cursos.map(c => c.grade_name),
+        datasets: [{
+          data: ev.cursos.map(c => c.prom_pct),
+          backgroundColor: ev.cursos.map(c => _maBgColor(c.prom_pct) + 'cc'),
+          borderColor:     ev.cursos.map(c => _maBgColor(c.prom_pct)),
+          borderWidth: 1,
+        }],
+      },
+      options: _maChartOpts(),
+    });
+    window._maCharts.push(ch);
   }
-  html += '</div>';
 
-  // Tabla comparativa con todos los cursos (contexto institucional)
-  evals.forEach((ev, ei) => {
-    const st = _maEvalStats(ev);
-    const coverage = st.allListed ? (100 * st.measured.length / st.allListed) : 0;
-    const avgTxt = st.avg !== null ? st.avg.toFixed(1) + '%' : '—';
-    html += `<div class="card mb24">
-      <div class="card-title">Contexto institucional · ${ev.nombre} · ${asig} · ${ev.año}</div>
-      <div class="kpi-grid" style="margin-bottom:18px">
-        <div class="kpi"><div class="value ${_maColor(st.avg)}">${avgTxt}</div><div class="desc">Promedio institución</div></div>
-        <div class="kpi"><div class="value cr">${st.critical}</div><div class="desc">Estudiantes bajo 50%</div></div>
-        <div class="kpi"><div class="value cy">${st.watchCourses}</div><div class="desc">Cursos 50–69%</div></div>
-        <div class="kpi"><div class="value ca">${coverage.toFixed(0)}%</div><div class="desc">Cobertura</div></div>
-      </div>
-      <div class="g2" style="gap:28px">
-        <div>
-          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Promedio por curso</div>
-          <div style="height:${Math.max(180, ev.cursos.length * 28)}px;position:relative">
-            <canvas id="ma-course-${ai}-${ei}"></canvas>
-          </div>
-        </div>
-        <div>
-          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Distribución de logro</div>
-          <div style="height:190px;position:relative">
-            <canvas id="ma-dist-${ai}-${ei}"></canvas>
-          </div>
-          <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:8px">
-            Más descendido: <strong style="color:${_maColor(st.weakest?.prom_pct)}">${st.weakest ? st.weakest.grade_name+' · '+st.weakest.prom_pct.toFixed(1)+'%' : '—'}</strong><br>
-            Más alto: <strong style="color:${_maColor(st.strongest?.prom_pct)}">${st.strongest ? st.strongest.grade_name+' · '+st.strongest.prom_pct.toFixed(1)+'%' : '—'}</strong>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  });
-
-  el.innerHTML = html;
+  const distCtx = document.getElementById('ma-dist-chart');
+  if (distCtx) {
+    const ch = new Chart(distCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Inicial', 'En desarrollo', 'Adecuado'],
+        datasets: [{
+          data: [st.counts.inicial, st.counts.desarrollo, st.counts.adecuado],
+          backgroundColor: ['#c0392bcc', '#b7770dcc', '#1e8449cc'],
+          borderColor:     ['#c0392b', '#b7770d', '#1e8449'],
+          borderWidth: 1,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position:'bottom', labels: { color:'#5a7a96', font:{family:'IBM Plex Mono',size:10} } },
+          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} estudiantes` } },
+        },
+      },
+    });
+    window._maCharts.push(ch);
+  }
 }
 
-// ── HTML vista Detalle (curso seleccionado) ───────────────────
-function _maBuildDetalleHTML(asig, ai, gen, estMap) {
-  const el = document.getElementById(`ma-view-det-${ai}`);
-  if (!el) return;
+// ── Drill-down: panel de detalle por curso ────────────────────
+function _maOpenCursoPanel(gen) {
+  const panel = document.getElementById('ma-curso-panel');
+  if (!panel) return;
 
-  const evals = MA[asig] || [];
-  let html = '';
+  // Toggle: misma fila cierra el panel
+  if (panel.dataset.gen === String(gen)) {
+    panel.innerHTML = '';
+    panel.dataset.gen = '';
+    return;
+  }
+  panel.dataset.gen = String(gen);
 
-  evals.forEach((ev, ei) => {
-    const c = ev.cursos.find(c => c.gen === gen);
-    if (!c) return;
+  const asig    = document.getElementById('ma-asig-sel')?.value || Object.keys(MA)[0];
+  const evalIdx = parseInt(document.getElementById('ma-eval-sel')?.value ?? '0');
+  const ev      = MA[asig]?.[evalIdx];
+  const c       = ev?.cursos.find(c => c.gen === gen);
+  const estMap  = window._maEstMap || {};
 
-    const nLabel = c.n_curso && c.n_curso !== c.n
-      ? `${c.n}/${c.n_curso} estudiantes con datos`
-      : `${c.n} estudiantes`;
+  if (!c) return;
 
-    html += `<div class="card mb24">
-      <div class="card-title">${c.grade_name} · ${ev.nombre} · ${asig} · ${c.prom_pct.toFixed(1)}% · ${nLabel}</div>`;
+  const nLabel = c.n_curso && c.n_curso !== c.n
+    ? `${c.n}/${c.n_curso} con datos`
+    : `${c.n} estudiantes`;
 
-    if (c.tiene_clasif && (c.ejes.length || c.habilidades.length)) {
-      const chartH = Math.max(120, Math.max(c.ejes.length, c.habilidades.length) * 32);
-      html += '<div class="g2" style="gap:32px;margin-bottom:24px">';
-      if (c.ejes.length) {
-        html += `<div>
-          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
-            Eje temático (${c.ejes.length} ejes · ${c.n_preguntas} preguntas)
-          </div>
-          <div style="height:${chartH}px;position:relative">
-            <canvas id="ma-eje-${ai}-${c.gen}-${ei}"></canvas>
-          </div>
-        </div>`;
-      }
-      if (c.habilidades.length) {
-        html += `<div>
-          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
-            Habilidad cognitiva (${c.habilidades.length} habilidades)
-          </div>
-          <div style="height:${chartH}px;position:relative">
-            <canvas id="ma-hab-${ai}-${c.gen}-${ei}"></canvas>
-          </div>
-        </div>`;
-      }
-      html += '</div>';
+  // Destruir gráficos del panel anterior
+  (window._maPanelCharts || []).forEach(ch => ch.destroy());
+  window._maPanelCharts = [];
+
+  let html = `<div class="card mb24" style="margin-top:12px;border-top:3px solid var(--accent)">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>${c.grade_name} · ${ev.nombre}</span>
+      <button class="dia-toggle" onclick="_maOpenCursoPanel(${gen})"
+        style="font-size:11px;padding:4px 10px">✕ Cerrar</button>
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px">
+      ${nLabel} · Promedio:
+      <strong style="color:${_maColor(c.prom_pct)}">${c.prom_pct.toFixed(1)}%</strong>
+    </div>`;
+
+  // ── Gráficos eje temático + habilidad cognitiva ───────────
+  if (c.tiene_clasif && (c.ejes.length || c.habilidades.length)) {
+    const chartH = Math.max(120, Math.max(c.ejes.length || 0, c.habilidades.length || 0) * 34);
+    html += '<div class="g2" style="gap:32px;margin-bottom:24px">';
+    if (c.ejes.length) {
+      html += `<div>
+        <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+          text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+          Eje temático · ${c.ejes.length} ejes · ${c.n_preguntas} preguntas
+        </div>
+        <div style="height:${chartH}px;position:relative">
+          <canvas id="ma-panel-eje"></canvas>
+        </div>
+      </div>`;
     }
+    if (c.habilidades.length) {
+      html += `<div>
+        <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+          text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+          Habilidad cognitiva
+        </div>
+        <div style="height:${chartH}px;position:relative">
+          <canvas id="ma-panel-hab"></canvas>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
 
-    // Tabla de estudiantes
-    html += `<div style="overflow-x:auto"><table class="summary-table">
-      <thead><tr>
-        <th style="text-align:left">Estudiante</th>
-        <th style="text-align:center">Correctas</th>
-        <th style="text-align:center">%</th>
-        <th style="text-align:center">Nivel</th>
-        <th style="text-align:center">Nota Mat.</th>
-        <th style="text-align:center">DIA Mat.</th>
+  // ── Tabla de estudiantes ──────────────────────────────────
+  html += `<div style="overflow-x:auto">
+    <table class="subj-table" style="font-size:12px;width:100%">
+      <thead><tr style="font-size:10px">
+        <th style="text-align:left;min-width:180px">Estudiante</th>
+        <th title="Correctas / Total">Correctas</th>
+        <th>%</th>
+        <th>Nivel</th>
+        <th title="Nota final Matemática ${CUR_YEAR}">Nota Mat.</th>
+        <th title="DIA Matemática — último período disponible">DIA Mat.</th>
       </tr></thead><tbody>`;
 
-    c.estudiantes.forEach(s => {
-      const col   = _maColor(s.pct);
-      const prof  = estMap[s.key];
-      const hasMed = s.pct !== null && s.pct !== undefined;
-      const lv    = _maLevel(s.pct);
-      const napsisMat = prof?.napsis?.[CUR_YEAR]?.asignaturas?.['MATEMÁTICA'] ?? null;
-      let diaVal = null;
-      const diaYear = prof?.dia?.[CUR_YEAR];
-      for (const p of ['cierre','monitoreo','diagnostico']) {
-        const mat = diaYear?.[p]?.matematica;
-        if (mat) { const vals = Object.values(mat).filter(v => v!=null); if(vals.length){diaVal=vals.reduce((a,b)=>a+b,0)/vals.length;break;} }
+  c.estudiantes.forEach(s => {
+    const col    = _maColor(s.pct);
+    const prof   = estMap[s.key];
+    const hasMed = s.pct !== null && s.pct !== undefined;
+    const lv     = _maLevel(s.pct);
+
+    const napsisMat = prof?.napsis?.[CUR_YEAR]?.asignaturas?.['MATEMÁTICA'] ?? null;
+    const nmCol = napsisMat !== null
+      ? (napsisMat < 4 ? 'var(--red)' : napsisMat < 5 ? 'var(--yellow)' : 'var(--green)')
+      : 'var(--muted)';
+
+    let diaVal = null;
+    const diaYear = prof?.dia?.[CUR_YEAR];
+    for (const p of ['cierre','monitoreo','diagnostico']) {
+      const mat = diaYear?.[p]?.matematica;
+      if (mat) {
+        const vals = Object.values(mat).filter(v => v != null);
+        if (vals.length) { diaVal = vals.reduce((a,b) => a+b, 0) / vals.length; break; }
       }
-      const nameHtml = prof
-        ? `<a href="#" onclick="openStudent('${s.key}');showTab('estudiantes',document.querySelector('nav button:nth-child(3)'));return false" style="color:var(--accent)">${s.nombre}</a>`
-        : s.nombre;
-      html += `<tr>
-        <td>${nameHtml}</td>
-        <td style="text-align:center;font-family:var(--mono);font-size:12px">${hasMed ? s.earned+'/'+s.possible : '—'}</td>
-        <td style="text-align:center;color:${col};font-weight:700;font-family:var(--mono)">${hasMed ? s.pct.toFixed(1)+'%' : '—'}</td>
-        <td style="text-align:center">
-          <span style="display:inline-block;padding:2px 7px;border-radius:3px;font-size:10px;
-            font-family:var(--mono);border:1px solid ${lv.color};color:${lv.color};
-            background:${hasMed ? lv.color+'12' : 'transparent'}">${lv.label}</span>
-        </td>
-        <td style="text-align:center;font-family:var(--mono);color:${napsisMat!==null?(napsisMat<4?'var(--red)':napsisMat<5?'var(--yellow)':'var(--green)'):'var(--muted)'}">
-          ${napsisMat!==null?napsisMat.toFixed(1):'—'}
-        </td>
-        <td style="text-align:center;font-family:var(--mono);color:${diaVal!==null?_maColor(diaVal):'var(--muted)'}">
-          ${diaVal!==null?diaVal.toFixed(1)+'%':'—'}
-        </td>
-      </tr>`;
-    });
-    html += '</tbody></table></div></div>';
+    }
+
+    const nameHtml = prof
+      ? `<a href="#" onclick="openStudent('${s.key}');showTab('estudiantes',
+           document.querySelector('nav button:nth-child(3)'));return false"
+           style="color:var(--accent)">${s.nombre}</a>`
+      : s.nombre;
+
+    html += `<tr>
+      <td>${nameHtml}</td>
+      <td style="text-align:center;font-family:var(--mono)">
+        ${hasMed ? s.earned+'/'+s.possible : '—'}
+      </td>
+      <td style="text-align:center;font-weight:700;font-family:var(--mono);color:${col}">
+        ${hasMed ? s.pct.toFixed(1)+'%' : '—'}
+      </td>
+      <td style="text-align:center">
+        <span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;
+          font-family:var(--mono);border:1px solid ${lv.color};color:${lv.color};
+          background:${hasMed ? lv.color+'12' : 'transparent'}">${lv.label}</span>
+      </td>
+      <td style="text-align:center;font-family:var(--mono);font-weight:${napsisMat!==null?600:400};color:${nmCol}">
+        ${napsisMat !== null ? napsisMat.toFixed(1) : '—'}
+      </td>
+      <td style="text-align:center;font-family:var(--mono);color:${diaVal!==null?_maColor(diaVal):'var(--muted)'}">
+        ${diaVal !== null ? diaVal.toFixed(1)+'%' : '—'}
+      </td>
+    </tr>`;
   });
 
-  if (!html) {
-    html = '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos de medición para este curso.</p>';
-  }
-  el.innerHTML = html;
-}
+  html += '</tbody></table></div>';
+  html += '<div class="table-note">Clic en el nombre para ver el perfil completo del estudiante</div>';
+  html += '</div>';
 
-// ── Dibujar gráficos de la vista Resumen ──────────────────────
-function _maDrawResumenCharts(asig, ai, gen) {
-  if (!window._maCharts) window._maCharts = {};
-  if (!window._maCharts[ai]) window._maCharts[ai] = [];
-  if (!window._maDoneRes) window._maDoneRes = {};
-  window._maDoneRes[ai] = true;
+  panel.innerHTML = html;
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
 
-  const evals  = MA[asig] || [];
-  const cursoEvals = evals.map(ev => {
-    const c = ev.cursos.find(c => c.gen === gen);
-    return c ? { ev, c } : null;
-  }).filter(Boolean);
-
-  // Gráfico de tendencia
-  if (cursoEvals.length > 1) {
-    const ctx = document.getElementById(`ma-trend-${ai}`);
-    if (ctx) {
-      const ch = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: cursoEvals.map(x => x.ev.nombre),
-          datasets: [{
-            data: cursoEvals.map(x => x.c.prom_pct),
-            borderColor: '#3498db',
-            backgroundColor: '#3498db18',
-            pointBackgroundColor: cursoEvals.map(x => _maBgColor(x.c.prom_pct)),
-            pointRadius: 5,
-            borderWidth: 2,
-            tension: 0.3,
-            fill: true,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.raw.toFixed(1) + '%' } },
-          },
-          scales: {
-            y: { min:0, max:100,
-              ticks: { callback: v=>v+'%', color:'#5a7a96', font:{family:'IBM Plex Mono',size:9} },
-              grid: { color:'rgba(184,208,232,.4)' } },
-            x: { ticks: { color:'#5a7a96', font:{family:'IBM Plex Mono',size:10} }, grid:{display:false} },
-          },
-        },
-      });
-      window._maCharts[ai].push(ch);
-    }
-  }
-
-  // Gráficos institucionales (barra por curso + donut distribución)
-  evals.forEach((ev, ei) => {
-    const st = _maEvalStats(ev);
-    const cCtx = document.getElementById(`ma-course-${ai}-${ei}`);
-    if (cCtx) {
-      const ch = new Chart(cCtx, {
-        type: 'bar',
-        data: {
-          labels: ev.cursos.map(c => c.grade_name),
-          datasets: [{
-            data: ev.cursos.map(c => c.prom_pct),
-            backgroundColor: ev.cursos.map(c => c.gen===gen ? _maBgColor(c.prom_pct)+'ff' : _maBgColor(c.prom_pct)+'88'),
-            borderColor:     ev.cursos.map(c => _maBgColor(c.prom_pct)),
-            borderWidth:     ev.cursos.map(c => c.gen===gen ? 2 : 1),
-          }],
-        },
-        options: _maChartOpts(),
-      });
-      window._maCharts[ai].push(ch);
-    }
-    const dCtx = document.getElementById(`ma-dist-${ai}-${ei}`);
-    if (dCtx) {
-      const ch = new Chart(dCtx, {
-        type: 'doughnut',
-        data: {
-          labels: ['Inicial', 'En desarrollo', 'Adecuado'],
-          datasets: [{
-            data: [st.counts.inicial, st.counts.desarrollo, st.counts.adecuado],
-            backgroundColor: ['#c0392bcc','#b7770dcc','#1e8449cc'],
-            borderColor:     ['#c0392b','#b7770d','#1e8449'],
-            borderWidth: 1,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position:'bottom', labels: { color:'#5a7a96', font:{family:'IBM Plex Mono',size:10} } },
-            tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} estudiantes` } },
-          },
-        },
-      });
-      window._maCharts[ai].push(ch);
-    }
-  });
-}
-
-// ── Dibujar gráficos de la vista Detalle ──────────────────────
-function _maDrawDetalleCharts(asig, ai, gen) {
-  if (!window._maCharts) window._maCharts = {};
-  if (!window._maCharts[ai]) window._maCharts[ai] = [];
-  if (!window._maDoneDet) window._maDoneDet = {};
-  window._maDoneDet[ai] = true;
-
-  const evals = MA[asig] || [];
-  const opts  = _maChartOpts();
-
-  evals.forEach((ev, ei) => {
-    const c = ev.cursos.find(c => c.gen === gen);
-    if (!c || !c.tiene_clasif) return;
-
+  // Dibujar gráficos del panel
+  const opts = _maChartOpts();
+  if (c.tiene_clasif) {
     if (c.ejes.length) {
-      const ctx = document.getElementById(`ma-eje-${ai}-${c.gen}-${ei}`);
+      const ctx = document.getElementById('ma-panel-eje');
       if (ctx) {
         const ch = new Chart(ctx, {
           type: 'bar',
           data: {
             labels: c.ejes.map(e => e.nombre),
             datasets: [{
-              data: c.ejes.map(e => e.prom_pct),
-              backgroundColor: c.ejes.map(e => _maBgColor(e.prom_pct)+'cc'),
+              data:            c.ejes.map(e => e.prom_pct),
+              backgroundColor: c.ejes.map(e => _maBgColor(e.prom_pct) + 'cc'),
               borderColor:     c.ejes.map(e => _maBgColor(e.prom_pct)),
               borderWidth: 1,
             }],
           },
           options: opts,
         });
-        window._maCharts[ai].push(ch);
+        window._maPanelCharts.push(ch);
       }
     }
-
     if (c.habilidades.length) {
-      const ctx = document.getElementById(`ma-hab-${ai}-${c.gen}-${ei}`);
+      const ctx = document.getElementById('ma-panel-hab');
       if (ctx) {
         const ch = new Chart(ctx, {
           type: 'bar',
           data: {
             labels: c.habilidades.map(h => h.nombre),
             datasets: [{
-              data: c.habilidades.map(h => h.prom_pct),
-              backgroundColor: c.habilidades.map(h => _maBgColor(h.prom_pct)+'cc'),
+              data:            c.habilidades.map(h => h.prom_pct),
+              backgroundColor: c.habilidades.map(h => _maBgColor(h.prom_pct) + 'cc'),
               borderColor:     c.habilidades.map(h => _maBgColor(h.prom_pct)),
               borderWidth: 1,
             }],
           },
           options: opts,
         });
-        window._maCharts[ai].push(ch);
+        window._maPanelCharts.push(ch);
       }
     }
-  });
+  }
 }
 
 // ════════════════════════════════════════════════════════════
