@@ -440,6 +440,7 @@ function renderColegio() {
     <th style="text-align:center;color:#1a73e8">PIE</th>
     <th style="text-align:center">DIA Lect.</th>
     <th style="text-align:center">DIA Mat.</th>
+    ${Object.keys(MA).length?'<th style="text-align:center">Med. Mat.</th>':''}
   </tr></thead>`;
   // Devuelve el promedio de ejes del período más avanzado disponible
   function diaLatestAvg(curso, materia) {
@@ -458,8 +459,12 @@ function renderColegio() {
   CURSOS.forEach(c => {
     const diaL = diaLatestAvg(c,'lectura');
     const diaM = diaLatestAvg(c,'matematica');
+    const maP  = _colMaLatest(c.gen);
     const pfCol = c.pf_prom ? nc(c.pf_prom) : '';
     const asistCol = c.asist_prom==null ? '' : c.asist_prom>=85 ? 'cg' : c.asist_prom>=75 ? 'cy' : 'cr';
+    const maCell = Object.keys(MA).length
+      ? `<td style="text-align:center;font-family:var(--mono);font-weight:${maP!=null?600:400};color:${_maColor(maP)}">${maP!=null?maP.toFixed(1)+'%':'—'}</td>`
+      : '';
     tbody.innerHTML += `<tr onclick="goToCurso(${c.gen})" style="cursor:pointer" title="Ver detalle de ${c.grade_name}">
       <td><strong style="color:var(--accent)">${c.grade_name}</strong></td>
       <td><span class="gen-badge">Gen. ${c.gen}</span></td>
@@ -473,6 +478,7 @@ function renderColegio() {
       <td style="text-align:center;font-family:var(--mono);color:#1a73e8;font-weight:${c.pie_count?700:400}">${c.pie_count||'—'}</td>
       <td style="text-align:center;font-family:var(--mono);color:${diaColor(diaL)}">${diaL!==null?diaL.toFixed(1)+'%':'—'}</td>
       <td style="text-align:center;font-family:var(--mono);color:${diaColor(diaM)}">${diaM!==null?diaM.toFixed(1)+'%':'—'}</td>
+      ${maCell}
     </tr>`;
   });
   tbl.appendChild(tbody);
@@ -526,7 +532,34 @@ function buildColTrayCard() {
   const hasDia   = diaPts.length > 0;
   const hasSepaL = sLKeys.length > 0;
   const hasSepaG = sGKeys.length > 0;
-  if(!hasDia && !hasSepaL && !hasSepaG) return;
+
+  // ── MEDICIÓN DE AVANCE: índice de ejes y habilidades (última medición) ───────
+  const _maEjIdx = {}, _maHabIdx = {};
+  let _maMedNombre = '';
+  if(Object.keys(MA).length) {
+    const _asig0 = Object.keys(MA)[0];
+    const _meds0 = MA[_asig0] || [];
+    const _last0 = _meds0[_meds0.length-1];
+    if(_last0) {
+      _maMedNombre = _last0.nombre;
+      _last0.cursos.forEach(mc => {
+        (mc.ejes||[]).forEach(e => {
+          if(!_maEjIdx[e.nombre]) _maEjIdx[e.nombre] = [];
+          _maEjIdx[e.nombre].push({gen:mc.gen, pct:e.prom_pct});
+        });
+        (mc.habilidades||[]).forEach(h => {
+          if(!_maHabIdx[h.nombre]) _maHabIdx[h.nombre] = [];
+          _maHabIdx[h.nombre].push({gen:mc.gen, pct:h.prom_pct});
+        });
+      });
+    }
+  }
+  const _maAvgArr = arr => arr.reduce((s,x)=>s+x.pct,0)/arr.length;
+  const _maEjNames  = Object.keys(_maEjIdx).sort((a,b)=>_maAvgArr(_maEjIdx[a])-_maAvgArr(_maEjIdx[b]));
+  const _maHabNames = Object.keys(_maHabIdx).sort((a,b)=>_maAvgArr(_maHabIdx[a])-_maAvgArr(_maHabIdx[b]));
+  const hasMAcol = _maEjNames.length > 0 || _maHabNames.length > 0;
+
+  if(!hasDia && !hasSepaL && !hasSepaG && !hasMAcol) return;
 
   // ── Promedios generales del colegio ──────────────────────
   const _avg = arr => arr.length ? +(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : null;
@@ -590,15 +623,22 @@ function buildColTrayCard() {
     _sub('Lectura','chart-col-dlec') + _sub('Matemática','chart-col-dmat') + '</div>';
   if(hasSepaL || hasSepaG) chartsHtml +=
     '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
-    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">SEPA</div>' +
-    '<div class="g2">' +
+    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:' + (hasDia?'22px':'0') + '">SEPA</div>' +
+    '<div class="g2" style="margin-bottom:22px">' +
     (hasSepaL ? _sub('Lenguaje','chart-col-sleng') : '<div></div>') +
     (hasSepaG ? _sub('Matemática','chart-col-smat') : '<div></div>') + '</div>';
+  if(hasMAcol) chartsHtml +=
+    '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
+    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">MEDICIÓN · ' + _maMedNombre + '</div>' +
+    '<div class="g2">' +
+    (_maEjNames.length ? _sub('Por eje','chart-col-maej') : '<div></div>') +
+    (_maHabNames.length ? _sub('Por habilidad','chart-col-mahab') : '<div></div>') + '</div>';
 
+  const _maTitle = hasMAcol ? ' · Medición' : '';
   container.innerHTML =
     '<div class="card mb24">' +
     '<div style="display:flex;align-items:center;margin-bottom:14px">' +
-    '<span class="card-title" style="margin:0">Trayectoria DIA · SEPA · Colegio</span>' +
+    '<span class="card-title" style="margin:0">Trayectoria DIA · SEPA' + _maTitle + ' · Colegio</span>' +
     '</div>' +
     '<div id="col-ssel" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;align-items:center">' +
     '<span style="font-size:11px;color:var(--muted);font-family:var(--mono);' +
@@ -662,6 +702,7 @@ function buildColTrayCard() {
 
   const diaOpts  = _mkOpts(0,100,20,'%');
   const sepaOpts = _mkOpts(450,850,50,'');
+  const maOpts   = _mkOpts(0,100,20,'%');
   const diaLbls  = diaPts.map(p=>p.label);
 
   if(hasDia) {
@@ -670,6 +711,32 @@ function buildColTrayCard() {
   }
   if(hasSepaL) _mkChart('chart-col-sleng', sLLbls, schSL, c=>cSL[c.gen], sepaOpts);
   if(hasSepaG) _mkChart('chart-col-smat',  sGLbls, schSG, c=>cSG[c.gen], sepaOpts);
+  if(hasMAcol) {
+    if(_maEjNames.length) {
+      const schMaEj = _maEjNames.map(ej => {
+        const vs = _maEjIdx[ej];
+        return +(vs.reduce((s,x)=>s+x.pct,0)/vs.length).toFixed(1);
+      });
+      _mkChart('chart-col-maej', _maEjNames, schMaEj, c => {
+        return _maEjNames.map(ej => {
+          const entry = (_maEjIdx[ej]||[]).find(x=>x.gen===c.gen);
+          return entry ? +entry.pct.toFixed(1) : null;
+        });
+      }, maOpts);
+    }
+    if(_maHabNames.length) {
+      const schMaHab = _maHabNames.map(h => {
+        const vs = _maHabIdx[h];
+        return +(vs.reduce((s,x)=>s+x.pct,0)/vs.length).toFixed(1);
+      });
+      _mkChart('chart-col-mahab', _maHabNames, schMaHab, c => {
+        return _maHabNames.map(h => {
+          const entry = (_maHabIdx[h]||[]).find(x=>x.gen===c.gen);
+          return entry ? +entry.pct.toFixed(1) : null;
+        });
+      }, maOpts);
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════════
