@@ -3138,24 +3138,21 @@ function renderEvstDia() {
   container.innerHTML = `
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
       <button class="filter-btn active" id="dia-sub-btn-resumen"
-              onclick="switchDiaSub('resumen')">Resumen</button>
+              onclick="switchDiaSub('resumen')">Resultados</button>
       <button class="filter-btn" id="dia-sub-btn-artic"
               onclick="switchDiaSub('artic')">Articulación curricular</button>
       <button class="filter-btn" id="dia-sub-btn-transv"
               onclick="switchDiaSub('transv')">Análisis transversal</button>
-      <button class="filter-btn" id="dia-sub-btn-estudiantes"
-              onclick="switchDiaSub('estudiantes')">Resultados por estudiante</button>
     </div>
     <div id="dia-sub-resumen"></div>
     <div id="dia-sub-artic"       style="display:none"></div>
-    <div id="dia-sub-transv"      style="display:none"></div>
-    <div id="dia-sub-estudiantes" style="display:none"></div>`;
+    <div id="dia-sub-transv"      style="display:none"></div>`;
   switchDiaSub('resumen');
 }
 let _diaSub = 'resumen';
 function switchDiaSub(tab) {
   _diaSub = tab;
-  ['resumen','artic','transv','estudiantes'].forEach(t => {
+  ['resumen','artic','transv'].forEach(t => {
     const el  = document.getElementById('dia-sub-' + t);
     const btn = document.getElementById('dia-sub-btn-' + t);
     if(el)  el.style.display = t === tab ? '' : 'none';
@@ -3164,10 +3161,9 @@ function switchDiaSub(tab) {
   if(tab==='resumen'     && !window._diaResumenDone)     { renderDiaResumen();     window._diaResumenDone=true;     }
   if(tab==='artic'       && !window._diaArticDone)       { renderDiaArtic();       window._diaArticDone=true;       }
   if(tab==='transv'      && !window._diaTransvDone)      { renderDiaTransv();      window._diaTransvDone=true;      }
-  if(tab==='estudiantes' && !window._diaEstudiantesDone) { renderDiaEstudiantes(); window._diaEstudiantesDone=true; }
 }
 
-// ── DIA Sub: Resumen ─────────────────────────────────────────
+// ── DIA Sub: Resultados ──────────────────────────────────────
 function renderDiaResumen() {
   const container = document.getElementById('dia-sub-resumen');
   const hasAny = CURSOS.some(c => c.dia && Object.keys(c.dia).length > 0);
@@ -3209,7 +3205,7 @@ function renderDiaResumen() {
 
   let html = `
     <div class="card mb24">
-      <div class="card-title">DIA · Resumen por Curso · ${CUR_YEAR}</div>
+      <div class="card-title">DIA · Resultados por Curso · ${CUR_YEAR}</div>
       <div style="overflow-x:auto"><table class="summary-table">
         <thead>
           <tr><th style="text-align:left">Curso</th>${colHeaders}</tr>
@@ -3231,7 +3227,7 @@ function renderDiaResumen() {
   _renderDiaResumenCurso();
 }
 
-// Detalle del curso seleccionado en DIA · Resumen: barras por eje + tabla de OA
+// Detalle del curso seleccionado en DIA · Resultados: barras por eje + tabla de OA
 function _renderDiaResumenCurso() {
   const sel = document.getElementById('dia-resumen-curso-sel');
   const detalle = document.getElementById('dia-resumen-detalle');
@@ -3513,57 +3509,6 @@ function renderDiaTransv() {
             '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
   container.innerHTML = html;
-}
-
-// ── DIA Sub: Resultados por estudiante ───────────────────────
-function renderDiaEstudiantes() {
-  const container = document.getElementById('dia-sub-estudiantes');
-  if(!DIA_MAT || !DIA_MAT.length) {
-    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos disponibles.</p>';
-    return;
-  }
-
-  // Selector de curso
-  const cursosConDatos = DIA_MAT.filter(c => c.estudiantes && c.estudiantes.length);
-  if(!cursosConDatos.length) {
-    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos de estudiantes disponibles.</p>';
-    return;
-  }
-
-  const opts = cursosConDatos.map((c,i) =>
-    `<option value="${i}">${c.short}</option>`
-  ).join('');
-
-  container.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-      <label style="font-size:12px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Curso</label>
-      <select id="dia-est-curso-sel" onchange="_renderDiaEstCurso()"
-        style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
-               background:var(--surface);color:var(--text);font-size:13px;cursor:pointer">
-        ${opts}
-      </select>
-      <div id="dia-est-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-left:auto">
-        ${[['≥80%','var(--green)','Logrado'],['60–80%','var(--accent)','En desarrollo'],
-            ['40–60%','var(--yellow)','Descendido'],['<40%','var(--red)','Desc. grave']].map(([rng,col,lbl]) =>
-          `<span style="font-size:10px;font-family:var(--mono);display:flex;align-items:center;gap:4px">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col}"></span>
-            ${rng} ${lbl}</span>`
-        ).join('')}
-      </div>
-    </div>
-    <div id="dia-est-content"></div>`;
-
-  _renderDiaEstCurso();
-}
-
-function _renderDiaEstCurso() {
-  const sel = document.getElementById('dia-est-curso-sel');
-  if(!sel) return;
-  const cursosConDatos = DIA_MAT.filter(c => c.estudiantes && c.estudiantes.length);
-  const c = cursosConDatos[parseInt(sel.value)];
-  if(!c) return;
-  const content = document.getElementById('dia-est-content');
-  content.innerHTML = _diaOaTableHtml(c);
 }
 
 // Construye la tabla de logro de OA por estudiante para un curso de DIA_MAT
