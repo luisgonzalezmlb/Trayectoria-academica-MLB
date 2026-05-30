@@ -3720,7 +3720,7 @@ function renderMedicionAvance() {
 
   const asig = document.getElementById('ma-asig-sel')?.value || Object.keys(MA)[0];
   const evalIdx = parseInt(document.getElementById('ma-eval-sel')?.value ?? '0');
-  const ev = MA[asig]?.[evalIdx];
+  let ev = MA[asig]?.[evalIdx];
 
   if (!ev) {
     container.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:20px 0">Sin datos para esta medición.</p>';
@@ -3966,14 +3966,14 @@ function _maOpenCursoPanel(gen) {
       }
     }
 
-    const nameHtml = prof
-      ? `<a href="#" onclick="openStudent('${s.key}');showTab('estudiantes',
-           document.querySelector('nav button:nth-child(3)'));return false"
-           style="color:var(--accent)">${s.nombre}</a>`
-      : s.nombre;
+    const nameTd = prof
+      ? `<td style="cursor:pointer;color:var(--accent);font-weight:500"
+           onclick="openStudent('${s.key}');showTab('estudiantes',document.querySelector('nav button:nth-child(3)'))">
+           ${s.nombre}</td>`
+      : `<td>${s.nombre}</td>`;
 
     html += `<tr>
-      <td>${nameHtml}</td>
+      ${nameTd}
       <td style="text-align:center;font-family:var(--mono)">
         ${hasMed ? s.earned+'/'+s.possible : '—'}
       </td>
