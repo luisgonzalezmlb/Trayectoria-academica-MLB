@@ -1135,6 +1135,8 @@ function _applySegFilters() {
       const nd = s.napsis[CUR_YEAR];
       const cells = cols.map(c => {
         const v = nd?.asignaturas?.[c.key];
+        if (v === undefined && (c.type === 'electivo' || c.type === 'diferenciado'))
+          return `<td style="text-align:center;font-family:var(--mono);font-size:12px"></td>`;
         return `<td class="${nc(v??null)}" style="text-align:center;font-family:var(--mono);font-size:12px">${v!=null ? v.toFixed(1) : '—'}</td>`;
       }).join('');
       const asist = nd?.asistencia;
@@ -1273,6 +1275,8 @@ function printCurso() {
     const nd = s.napsis[CUR_YEAR];
     const cells = active_cols.map(c => {
       const v = nd?.asignaturas?.[c.key];
+      if (v === undefined && (c.type === 'electivo' || c.type === 'diferenciado'))
+        return `<td style="text-align:center"></td>`;
       const col = v==null?'#888':v<4?'#721c24':v<5?'#856404':'#000';
       const fw  = v!=null&&v<5?'bold':'normal';
       return `<td style="text-align:center;color:${col};font-weight:${fw}">${v!=null?v.toFixed(1):'—'}</td>`;
@@ -1394,6 +1398,8 @@ function printSeguimiento() {
         const nd = s.napsis[CUR_YEAR];
         const cells = allCols.map(c => {
           const v = nd?.asignaturas?.[c.key];
+          if (v === undefined && (c.type === 'electivo' || c.type === 'diferenciado'))
+            return `<td style="padding:4px 6px;border:1px solid #eee;text-align:center;font-size:11px"></td>`;
           const col = v==null?'#888':v<4?'#c0392b':v<5?'#b7770d':'#000';
           const fw  = v!=null&&v<5?'bold':'normal';
           return `<td style="padding:4px 6px;border:1px solid #eee;text-align:center;font-size:11px;color:${col};font-weight:${fw}">${v!=null?v.toFixed(1):'—'}</td>`;
@@ -1623,6 +1629,8 @@ function renderAsignaturas() {
 
   const nc  = v => v == null ? '' : v < 4 ? 'cr' : v < 5 ? 'cy' : v < 6 ? 'ca' : 'cg';
   const ns2 = v => v == null ? '—' : v.toFixed(1);
+  const subjType = students[0]?.napsis[CUR_YEAR]?.col_map?.find(c => c.key === colKey)?.type ?? 'comun';
+  const isElective = subjType === 'electivo' || subjType === 'diferenciado';
 
   // Obtener estructura de evaluaciones desde el primer alumno que tenga datos
   const sampleEv = students.find(s => s.napsis[CUR_YEAR]?.evals?.[colKey])?.napsis[CUR_YEAR]?.evals?.[colKey];
@@ -1650,9 +1658,12 @@ function renderAsignaturas() {
   const tbody = students.map(s => {
     const nd = s.napsis[CUR_YEAR];
     const ev = nd?.evals?.[colKey];
-    const finalGrade = nd?.asignaturas?.[colKey] ?? null;
+    const rawGrade = nd?.asignaturas?.[colKey];
+    const notEnrolled = rawGrade === undefined && isElective;
+    const finalGrade = rawGrade ?? null;
 
     const cellsSem1 = sem1Names.map((n,i) => {
+      if (notEnrolled) return `<td style="${i===0?sepStyle:''}"></td>`;
       const entry = ev?.['1']?.find(e => e.name === n);
       const v = entry?.grade ?? null;
       const isProm = n === 'Promedio sem.';
@@ -1660,6 +1671,7 @@ function renderAsignaturas() {
     }).join('');
 
     const cellsSem2 = sem2Names.map((n,i) => {
+      if (notEnrolled) return `<td style="${i===0?sepStyle:''}"></td>`;
       const entry = ev?.['2']?.find(e => e.name === n);
       const v = entry?.grade ?? null;
       const isProm = n === 'Promedio sem.';
@@ -1669,7 +1681,7 @@ function renderAsignaturas() {
     return `<tr onclick="openStudent('${s.key}')" style="cursor:pointer">
       <td style="font-weight:500">${s.nombre}</td>
       ${cellsSem1}${cellsSem2}
-      <td class="${nc(finalGrade)} pf-cell" style="${sepStyle};font-weight:700">${ns2(finalGrade)}</td>
+      <td class="${notEnrolled ? '' : nc(finalGrade)} pf-cell" style="${sepStyle};font-weight:700">${notEnrolled ? '' : ns2(finalGrade)}</td>
     </tr>`;
   }).join('');
 
@@ -2299,6 +2311,8 @@ function renderCursoTable(students, active_cols) {
     const nd = s.napsis[CUR_YEAR];
     const cells = active_cols.map(c => {
       const v = nd?.asignaturas?.[c.key];
+      if (v === undefined && (c.type === 'electivo' || c.type === 'diferenciado'))
+        return `<td></td>`;
       return `<td class="${nc(v??null)}">${ns(v??null)}</td>`;
     }).join('');
     const lv = nd?.risk;
