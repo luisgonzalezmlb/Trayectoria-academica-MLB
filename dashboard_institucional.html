@@ -228,8 +228,10 @@
   <button onclick="showTab('asignaturas',this)">Asignaturas</button>
   <button onclick="showTab('medicion',this)">Medición de avance matemática</button>
   <button onclick="showTab('evst',this)">Evaluaciones estand.</button>
-  <button id="btn-admin" onclick="showTab('admin',this)"
-    style="display:none;margin-left:auto;border-left:2px solid var(--border);padding-left:16px;color:var(--accent)">
+  <button id="btn-notas-faltantes" onclick="showTab('notas-faltantes',this)"
+    style="display:none">Notas faltantes</button>
+  <button id="btn-admin" onclick="_tryAdmin()"
+    style="display:none;margin-left:auto;border-left:2px solid var(--border);padding-left:16px;color:var(--accent);cursor:pointer">
     🔒 Coordinación
   </button>
 </nav>
@@ -338,8 +340,8 @@
   <div id="tab-evst-paes" style="display:none"></div>
 </div>
 
-<!-- ══════════════════ ADMIN — COORDINACIÓN ══════════════════ -->
-<div class="tab-content" id="tab-admin">
+<!-- ══════════════════ NOTAS FALTANTES (admin) ══════════════════ -->
+<div class="tab-content" id="tab-notas-faltantes">
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
     <button class="filter-btn active" id="btn-nf-todas"   onclick="_nfSetMode('todas')">Todas</button>
     <button class="filter-btn"        id="btn-nf-parcial" onclick="_nfSetMode('parcial')">Solo ya ocurridas</button>
@@ -420,7 +422,7 @@ function showTab(id, btn) {
   if(id==='asignaturas'  && !window._asigInit)      { initAsignaturas();      window._asigInit=true; }
   if(id==='medicion'     && !window._medicionInit)  { initMedicion(); window._medicionInit=true; }
   if(id==='evst'         && !window._evstInit)      { switchEvstTab('dia');   window._evstInit=true; }
-  if(id==='admin'        && !window._adminNFInit)   { renderNF();             window._adminNFInit=true; }
+  if(id==='notas-faltantes' && !window._adminNFInit) { renderNF(); window._adminNFInit=true; }
 }
 function goToCurso(gen) {
   showTab('cursos', document.querySelector('nav button:nth-child(2)'));
@@ -4556,7 +4558,11 @@ const _ADMIN_KEY = 'nf_admin_auth';
 let   _nfMode    = 'todas';   // 'todas' | 'parcial'
 
 function _tryAdmin() {
-  if(sessionStorage.getItem(_ADMIN_KEY) === '1') { _enableAdmin(); return; }
+  // Si ya está autenticado, navegar directo a la pestaña
+  if(sessionStorage.getItem(_ADMIN_KEY) === '1') {
+    showTab('notas-faltantes', document.getElementById('btn-notas-faltantes'));
+    return;
+  }
   const modal = document.getElementById('admin-modal');
   modal.style.display = 'flex';
   setTimeout(() => document.getElementById('admin-pw-input').focus(), 50);
@@ -4573,14 +4579,15 @@ function _submitAdmin() {
     sessionStorage.setItem(_ADMIN_KEY, '1');
     _closeAdminModal();
     _enableAdmin();
+    showTab('notas-faltantes', document.getElementById('btn-notas-faltantes'));
   } else {
     err.style.display = 'block';
     document.getElementById('admin-pw-input').select();
   }
 }
 function _enableAdmin() {
-  const btn = document.getElementById('btn-admin');
-  if(btn) btn.style.display = '';
+  document.getElementById('btn-notas-faltantes').style.display = '';
+  document.getElementById('btn-admin').style.display = '';
 }
 
 function _nfSetMode(mode) {
