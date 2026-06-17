@@ -1632,8 +1632,13 @@ function renderAsignaturas() {
   const subjType = students[0]?.napsis[CUR_YEAR]?.col_map?.find(c => c.key === colKey)?.type ?? 'comun';
   const isElective = subjType === 'electivo' || subjType === 'diferenciado';
 
+  // Para electivos y diferenciados, mostrar solo quienes cursan la asignatura
+  const studentsFiltered = isElective
+    ? students.filter(s => s.napsis[CUR_YEAR]?.asignaturas?.[colKey] !== undefined)
+    : students;
+
   // Obtener estructura de evaluaciones desde el primer alumno que tenga datos
-  const sampleEv = students.find(s => s.napsis[CUR_YEAR]?.evals?.[colKey])?.napsis[CUR_YEAR]?.evals?.[colKey];
+  const sampleEv = studentsFiltered.find(s => s.napsis[CUR_YEAR]?.evals?.[colKey])?.napsis[CUR_YEAR]?.evals?.[colKey];
   const sem1Names = sampleEv ? sampleEv['1'].map(e => e.name) : [];
   const sem2Names = sampleEv ? sampleEv['2'].map(e => e.name) : [];
   const hasEvals  = sem1Names.length > 0 || sem2Names.length > 0;
@@ -1655,15 +1660,12 @@ function renderAsignaturas() {
   </tr>`;
 
   // Construir filas
-  const tbody = students.map(s => {
+  const tbody = studentsFiltered.map(s => {
     const nd = s.napsis[CUR_YEAR];
     const ev = nd?.evals?.[colKey];
-    const rawGrade = nd?.asignaturas?.[colKey];
-    const notEnrolled = rawGrade === undefined && isElective;
-    const finalGrade = rawGrade ?? null;
+    const finalGrade = nd?.asignaturas?.[colKey] ?? null;
 
     const cellsSem1 = sem1Names.map((n,i) => {
-      if (notEnrolled) return `<td style="${i===0?sepStyle:''}"></td>`;
       const entry = ev?.['1']?.find(e => e.name === n);
       const v = entry?.grade ?? null;
       const isProm = n === 'Promedio sem.';
@@ -1671,7 +1673,6 @@ function renderAsignaturas() {
     }).join('');
 
     const cellsSem2 = sem2Names.map((n,i) => {
-      if (notEnrolled) return `<td style="${i===0?sepStyle:''}"></td>`;
       const entry = ev?.['2']?.find(e => e.name === n);
       const v = entry?.grade ?? null;
       const isProm = n === 'Promedio sem.';
@@ -1681,12 +1682,12 @@ function renderAsignaturas() {
     return `<tr onclick="openStudent('${s.key}')" style="cursor:pointer">
       <td style="font-weight:500">${s.nombre}</td>
       ${cellsSem1}${cellsSem2}
-      <td class="${notEnrolled ? '' : nc(finalGrade)} pf-cell" style="${sepStyle};font-weight:700">${notEnrolled ? '' : ns2(finalGrade)}</td>
+      <td class="${nc(finalGrade)} pf-cell" style="${sepStyle};font-weight:700">${ns2(finalGrade)}</td>
     </tr>`;
   }).join('');
 
   // Estadísticas de la asignatura
-  const finals = students.map(s => s.napsis[CUR_YEAR]?.asignaturas?.[colKey]).filter(v => v != null);
+  const finals = studentsFiltered.map(s => s.napsis[CUR_YEAR]?.asignaturas?.[colKey]).filter(v => v != null);
   const prom   = finals.length ? (finals.reduce((a,b)=>a+b,0)/finals.length).toFixed(2) : '—';
   const repro  = finals.filter(v=>v<4).length;
   const aprob  = finals.filter(v=>v>=4).length;
@@ -1694,7 +1695,7 @@ function renderAsignaturas() {
 
   cont.innerHTML = `
   <div class="kpi-row" style="margin-bottom:16px">
-    <div class="kpi"><div class="value ca">${students.length}</div><div class="desc">Estudiantes</div></div>
+    <div class="kpi"><div class="value ca">${studentsFiltered.length}</div><div class="desc">Estudiantes</div></div>
     <div class="kpi"><div class="value ${nc(parseFloat(prom))}">${prom}</div><div class="desc">Promedio</div></div>
     <div class="kpi"><div class="value cr">${repro}</div><div class="desc">Reprobados</div></div>
     <div class="kpi"><div class="value cg">${aprob}</div><div class="desc">Aprobados (${pctAp})</div></div>
