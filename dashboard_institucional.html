@@ -1386,14 +1386,18 @@ function printSeguimiento() {
       .sort((a,b) => Number(b[0]) - Number(a[0]))
       .map(([, {name: courseName, sts: students}]) => {
       students.sort((a,b) => a.nombre.localeCompare(b.nombre));
-      const allCols = [];
+      const _allCols = [];
       const seen = new Set();
       students.forEach(s => {
         (s.napsis[CUR_YEAR]?.col_map??[]).filter(c=>!c.np).forEach(c => {
-          if(!seen.has(c.key)) { seen.add(c.key); allCols.push(c); }
+          if(!seen.has(c.key)) { seen.add(c.key); _allCols.push(c); }
         });
       });
-      const headers = allCols.map(c=>`<th style="padding:4px 6px;border:1px solid #ccc;font-size:10px;background:#f5f5f5">${c.short}</th>`).join('');
+      // Solo columnas donde al menos un estudiante tiene nota (igual que la vista en pantalla)
+      const allCols = _allCols.filter(c => students.some(s => s.napsis[CUR_YEAR]?.asignaturas?.[c.key] != null));
+      const thStyle = 'padding:4px 6px;border:1px solid #ccc;font-size:10px;background:#f5f5f5';
+      const headers = allCols.map(c=>`<th style="${thStyle}">${c.short}</th>`).join('');
+      const lvLabel = {alerta:'Alerta',activo:'Riesgo activo',preventivo:'Seg. preventivo'}[lv];
       const rows = students.map(s => {
         const nd = s.napsis[CUR_YEAR];
         const cells = allCols.map(c => {
@@ -1405,19 +1409,25 @@ function printSeguimiento() {
           return `<td style="padding:4px 6px;border:1px solid #eee;text-align:center;font-size:11px;color:${col};font-weight:${fw}">${v!=null?v.toFixed(1):'—'}</td>`;
         }).join('');
         const pfColor = nd?.pf==null?'#888':nd.pf<4?'#c0392b':nd.pf<5?'#b7770d':'#000';
+        const asist = nd?.asistencia;
+        const asistColor = asist==null?'#888':asist>=85?'#1a7a40':asist>=75?'#b7770d':'#c0392b';
         return `<tr>
           <td style="padding:4px 6px;border:1px solid #eee;font-size:11px">${s.nombre}</td>
           ${cells}
           <td style="padding:4px 6px;border:1px solid #eee;text-align:center;font-size:11px;font-weight:bold;color:${pfColor}">${nd?.pf!=null?nd.pf.toFixed(1):'—'}</td>
+          <td style="padding:4px 6px;border:1px solid #eee;text-align:center;font-size:11px;color:${asistColor}">${asist!=null?asist+'%':'—'}</td>
+          <td style="padding:4px 6px;border:1px solid #eee;text-align:center;font-size:11px;color:${lvColor};font-weight:600">${lvLabel}</td>
         </tr>`;
       }).join('');
       return `<div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:bold;color:#333;margin-bottom:4px;padding:4px 8px;background:#f0f0f0;border-left:3px solid ${lvColor}">${courseName}</div>
         <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif">
           <thead><tr>
-            <th style="padding:4px 6px;border:1px solid #ccc;font-size:10px;background:#f5f5f5;text-align:left">Estudiante</th>
+            <th style="${thStyle};text-align:left">Estudiante</th>
             ${headers}
-            <th style="padding:4px 6px;border:1px solid #ccc;font-size:10px;background:#f5f5f5">PROM</th>
+            <th style="${thStyle}">PROM</th>
+            <th style="${thStyle}">ASIST.</th>
+            <th style="${thStyle}">Estado</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
