@@ -195,7 +195,7 @@
   <div class="hdr-left">
     <span class="chip">Liceo Bicentenario María Luisa Bombal</span>
     <h1>Dashboard Institucional · 2026</h1>
-    <span class="hdr-meta">Dashboard generado: 18/06/2026 &nbsp;·&nbsp; Notas NAPSIS 2026: 18/06/2026 13:11</span>
+    <span class="hdr-meta">Dashboard generado: 19/06/2026 &nbsp;·&nbsp; Notas NAPSIS 2026: 18/06/2026 13:11</span>
   </div>
   <div class="hdr-stats" id="hdr-stats"></div>
   <span id="admin-trigger" onclick="_tryAdmin()" title=""
@@ -1375,16 +1375,73 @@ function _applySegResumFilters() {
 }
 
 function printCurso() {
-  const students   = window._cursoStudents ?? [];
-  const subjStats  = window._cursoSubjStats ?? [];
+  const students  = window._cursoStudents ?? [];
+  const subjStats = window._cursoSubjStats ?? [];
   if(!students.length) return;
 
-  const curso = students[0]?.napsis[CUR_YEAR];
+  const curso     = students[0]?.napsis[CUR_YEAR];
   const gradeName = curso?.grade_name ?? '';
-  const active_cols = (curso?.col_map ?? []).filter(c => !c.np);
-  const today = new Date().toLocaleDateString('es-CL', {day:'2-digit', month:'long', year:'numeric'});
+  const today     = new Date().toLocaleDateString('es-CL', {day:'2-digit', month:'long', year:'numeric'});
+  const _css = `
+    body {font-family:Arial,sans-serif;margin:18mm 20mm;color:#222;font-size:11px}
+    h1 {font-size:15px;margin:0 0 2px}
+    .meta {font-size:10px;color:#666;margin-bottom:18px}
+    table {border-collapse:collapse;width:100%;font-size:10px}
+    th {background:#f0f0f0;padding:4px 6px;border:1px solid #ccc;font-size:9px;text-align:center}
+    th:first-child {text-align:left}
+    td {padding:3px 6px;border:1px solid #eee}
+    tr:nth-child(even) td {background:#fafafa}
+    @media print {body{margin:10mm}}`;
+  const win = window.open('','_blank');
 
-  // ── Tabla de estudiantes ──────────────────────────────────────
+  // ── Vista Resumen → imprimir tabla de estadísticas por asignatura ──
+  if (_cursoFilter === 'resumen') {
+    const typeLabel = { comun:'', diferenciado:' · Dif.', electivo:' · Elec.' };
+    const resumenRows = subjStats.map(col => {
+      if(!col.n) return `<tr><td style="font-weight:600">${col.label}<span style="font-size:10px;color:#888">${typeLabel[col.type]||''}</span></td><td colspan="11" style="color:#888;font-style:italic">Sin notas registradas</td></tr>`;
+      const aprob  = col.r49 + col.r59 + col.r70;
+      const pctAp  = aprob / col.n * 100;
+      const pctCol  = pctAp >= 90 ? '#1a7a40' : pctAp >= 80 ? '#b7770d' : '#c0392b';
+      const promCol = !col.prom ? '#888' : col.prom < 4 ? '#c0392b' : col.prom < 5 ? '#b7770d' : col.prom < 6 ? '#2980b9' : '#1a7a40';
+      const pct = n => col.n ? `<span style="font-size:9px;color:#888">(${(n/col.n*100).toFixed(0)}%)</span>` : '';
+      return `<tr>
+        <td style="font-weight:600">${col.label}<span style="font-size:10px;color:#888">${typeLabel[col.type]||''}</span></td>
+        <td style="text-align:center">${col.n}</td>
+        <td style="text-align:center;color:${promCol};font-weight:600">${col.prom ? col.prom.toFixed(1) : '—'}</td>
+        <td style="text-align:center">${col.min !== null ? col.min.toFixed(1) : '—'}</td>
+        <td style="text-align:center">${col.max !== null ? col.max.toFixed(1) : '—'}</td>
+        <td style="text-align:center">${col.std !== null ? col.std.toFixed(2) : '—'}</td>
+        <td style="text-align:center;color:#c0392b">${col.r39} ${pct(col.r39)}</td>
+        <td style="text-align:center;color:#b7770d">${col.r49} ${pct(col.r49)}</td>
+        <td style="text-align:center;color:#2980b9">${col.r59} ${pct(col.r59)}</td>
+        <td style="text-align:center;color:#1a7a40">${col.r70} ${pct(col.r70)}</td>
+        <td style="text-align:center;color:#888">${col.type === 'comun' ? col.sin : '—'}</td>
+        <td style="text-align:center;color:${pctCol};font-weight:600">${pctAp.toFixed(1)}%</td>
+      </tr>`;
+    }).join('');
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>${gradeName} · ${CUR_YEAR} · Resumen</title>
+      <style>${_css}</style>
+    </head><body>
+      <h1>Liceo Bicentenario María Luisa Bombal · ${gradeName} · ${CUR_YEAR} · Resumen por asignatura</h1>
+      <div class="meta">Impreso: ${today}</div>
+      <table>
+        <thead><tr>
+          <th style="text-align:left;min-width:150px">Asignatura</th>
+          <th>N°</th><th>Prom.</th><th>Mín.</th><th>Máx.</th><th title="Desviación estándar">D.E.</th>
+          <th style="color:#c0392b">Bajo 4.0</th><th style="color:#b7770d">4.0–4.9</th>
+          <th style="color:#2980b9">5.0–5.9</th><th style="color:#1a7a40">6.0–7.0</th>
+          <th>S/N</th><th>% Aprob.</th>
+        </tr></thead>
+        <tbody>${resumenRows}</tbody>
+      </table>
+      <script>window.onload=function(){window.print()};<\/script>
+    </body></html>`);
+    win.document.close();
+    return;
+  }
+
+  // ── Vista estudiantes → imprimir lista de alumnos ─────────────────
   const _riskOrder = { alerta:0, activo:1, preventivo:2 };
   const sorted = [...students].sort((a,b) => {
     const k = _cursoSort.key;
@@ -1396,21 +1453,24 @@ function printCurso() {
     const _sv = (s,k) => k==='nombre' ? s.nombre
                        : k==='asistencia' ? (s.napsis[CUR_YEAR]?.asistencia ?? 999)
                        : (s.napsis[CUR_YEAR]?.asignaturas?.[k] ?? s.napsis[CUR_YEAR]?.pf ?? 99);
-    const av = _sv(a,k);
-    const bv = _sv(b,k);
+    const av = _sv(a,k); const bv = _sv(b,k);
     if(av===null||av===99||av===999) return 1; if(bv===null||bv===99||bv===999) return -1;
     return typeof av==='string' ? av.localeCompare(bv)*_cursoSort.dir : (av-bv)*_cursoSort.dir;
   });
-  const _FILTER_LABELS = { all:'Todos', bajo50:'Bajo 5.0', entre:'Entre 5.0–5.9', sobre60:'Sobre 6.0', seguimiento:'En seguimiento', resumen:'Todos' };
+  const _FILTER_LABELS = { all:'Todos', bajo50:'Bajo 5.0', entre:'Entre 5.0–5.9', sobre60:'Sobre 6.0', seguimiento:'En seguimiento' };
   let printList = sorted;
   if(_cursoFilter === 'bajo50')      printList = sorted.filter(s => { const pf=s.napsis[CUR_YEAR]?.pf; return pf!=null&&pf<5.0; });
   if(_cursoFilter === 'entre')       printList = sorted.filter(s => { const pf=s.napsis[CUR_YEAR]?.pf; return pf!=null&&pf>=5.0&&pf<6.0; });
   if(_cursoFilter === 'sobre60')     printList = sorted.filter(s => { const pf=s.napsis[CUR_YEAR]?.pf; return pf!=null&&pf>=6.0; });
   if(_cursoFilter === 'seguimiento') printList = sorted.filter(s => !!s.napsis[CUR_YEAR]?.risk);
   if(_cursoSearch) { const q = _cursoSearch.toLowerCase(); printList = printList.filter(s => s.nombre.toLowerCase().includes(q)); }
-  const filterLabel = _FILTER_LABELS[_cursoFilter] ?? 'Todos';
+  const filterLabel  = _FILTER_LABELS[_cursoFilter] ?? 'Todos';
   const filterSuffix = printList.length !== students.length
     ? ` · Filtro: ${filterLabel} (${printList.length} estudiante${printList.length!==1?'s':''})` : '';
+
+  // Solo columnas donde al menos un estudiante de la lista tiene nota (igual que pantalla)
+  const active_cols = (curso?.col_map ?? []).filter(c => !c.np && printList.some(s => s.napsis[CUR_YEAR]?.asignaturas?.[c.key] != null));
+
   const RISK_PRINT = { alerta:'ALERTA', activo:'RIESGO ACTIVO', preventivo:'SEG. PREV.' };
   const RISK_COL   = { alerta:'#721c24', activo:'#856404', preventivo:'#0c5460' };
   const estRows = printList.map(s => {
@@ -1423,38 +1483,29 @@ function printCurso() {
       const fw  = v!=null&&v<5?'bold':'normal';
       return `<td style="text-align:center;color:${col};font-weight:${fw}">${v!=null?v.toFixed(1):'—'}</td>`;
     }).join('');
-    const pfCol = nd?.pf==null?'#888':nd.pf<4?'#721c24':nd.pf<5?'#856404':'#000';
-    const risk  = nd?.risk ? `<span style="color:${RISK_COL[nd.risk]};font-weight:bold">${RISK_PRINT[nd.risk]}</span>` : '';
+    const pfCol    = nd?.pf==null?'#888':nd.pf<4?'#721c24':nd.pf<5?'#856404':'#000';
+    const asist    = nd?.asistencia;
+    const asistCol = asist==null?'#888':asist>=85?'#1a7a40':asist>=75?'#b7770d':'#c0392b';
+    const risk     = nd?.risk ? `<span style="color:${RISK_COL[nd.risk]};font-weight:bold">${RISK_PRINT[nd.risk]}</span>` : '';
     return `<tr>
       <td>${s.nombre}</td>${cells}
       <td style="text-align:center;font-weight:bold;color:${pfCol}">${nd?.pf!=null?nd.pf.toFixed(1):'—'}</td>
+      <td style="text-align:center;color:${asistCol}">${asist!=null?asist+'%':'—'}</td>
       <td style="text-align:center;font-size:9px">${risk}</td>
     </tr>`;
   }).join('');
-
   const thCols = active_cols.map(c=>`<th>${c.short}</th>`).join('');
 
-  const win = window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>${gradeName} · ${CUR_YEAR}</title>
-    <style>
-      body {font-family:Arial,sans-serif;margin:18mm 20mm;color:#222;font-size:11px}
-      h1 {font-size:15px;margin:0 0 2px} h2 {font-size:12px;margin:22px 0 6px;border-bottom:1px solid #ccc;padding-bottom:3px}
-      .meta {font-size:10px;color:#666;margin-bottom:18px}
-      table {border-collapse:collapse;width:100%;font-size:10px}
-      th {background:#f0f0f0;padding:4px 6px;border:1px solid #ccc;font-size:9px;text-align:center}
-      th:first-child {text-align:left}
-      td {padding:3px 6px;border:1px solid #eee}
-      tr:nth-child(even) td {background:#fafafa}
-      @media print {body{margin:10mm} button{display:none}}
-    </style>
+    <style>${_css}</style>
   </head><body>
     <h1>Liceo Bicentenario María Luisa Bombal · ${gradeName} · ${CUR_YEAR}</h1>
     <div class="meta">Impreso: ${today}${filterSuffix}</div>
     <table>
       <thead><tr>
         <th style="text-align:left">Estudiante</th>${thCols}
-        <th>PROM</th><th>Estado</th>
+        <th>PROM</th><th>ASIST.</th><th>Estado</th>
       </tr></thead>
       <tbody>${estRows}</tbody>
     </table>
