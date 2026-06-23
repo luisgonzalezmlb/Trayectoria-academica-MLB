@@ -195,7 +195,7 @@
   <div class="hdr-left">
     <span class="chip">Liceo Bicentenario María Luisa Bombal</span>
     <h1>Dashboard Institucional · 2026</h1>
-    <span class="hdr-meta">Dashboard generado: 19/06/2026 &nbsp;·&nbsp; Notas NAPSIS 2026: 19/06/2026 12:49</span>
+    <span class="hdr-meta">Dashboard generado: 23/06/2026 &nbsp;·&nbsp; Notas NAPSIS 2026: 19/06/2026 12:49</span>
   </div>
   <div class="hdr-stats" id="hdr-stats"></div>
   <span id="admin-trigger" onclick="_tryAdmin()" title=""
@@ -628,8 +628,6 @@ function renderDemografia() {
   window._demCharts = [];
 
   const cs   = Object.values(DEM.cursos).sort((a,b)=>a.grade-b.grade);
-  const PAL  = ['#1a5276','#117a65','#7d6608','#6c3483','#c0392b','#1a6dad',
-                '#27ae60','#d35400','#8e44ad','#2ecc71','#e74c3c','#16a085'];
   const COL_F = '#d96ba0', COL_M = '#3a7ec2';
   const nF = col.sexo.F, nM = col.sexo.M;
   const pF = col.total ? Math.round(nF/col.total*100) : 0;
@@ -654,14 +652,6 @@ function renderDemografia() {
         <div style="position:relative;height:240px"><canvas id="dem-sex-donut"></canvas></div>
         <div style="position:relative;height:320px"><canvas id="dem-sex-bar"></canvas></div>
       </div>
-    </div>
-
-    <div class="card mb24">
-      <span class="card-title">Edad por curso</span>
-      <div style="font-size:11px;color:var(--muted);margin:4px 0 12px">
-        Edad promedio al inicio del año escolar; el tooltip muestra el rango (mín–máx) y la extraedad del curso.
-      </div>
-      <div style="position:relative;height:300px"><canvas id="dem-edad-bar"></canvas></div>
     </div>
 
     <div class="card mb24">
@@ -693,24 +683,6 @@ function renderDemografia() {
       plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},
       scales:{x:{stacked:true,beginAtZero:true,ticks:{precision:0,font:{size:10}}},
                y:{stacked:true,ticks:{font:{size:10}}}}}
-  }));
-
-  // ── Edad promedio por curso ──
-  window._demCharts.push(new Chart(document.getElementById('dem-edad-bar'), {
-    type:'bar',
-    data:{labels,datasets:[{label:'Edad promedio',
-      data:cs.map(c=>c.edad_prom),
-      backgroundColor:cs.map((c,i)=>PAL[i%PAL.length])}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},
-        tooltip:{callbacks:{
-          label:ctx=>'Edad promedio: '+(ctx.raw??'—')+' años',
-          afterLabel:ctx=>{const c=cs[ctx.dataIndex];
-            return 'Rango: '+(c.edad_min??'—')+'–'+(c.edad_max??'—')+' años'
-                 +(c.extraedad?'\nEn extraedad: '+c.extraedad:'');}
-        }}},
-      scales:{y:{beginAtZero:true,title:{display:true,text:'años'},ticks:{font:{size:10}}},
-               x:{ticks:{font:{size:10}}}}}
   }));
 
   // ── Comuna · selector + barra ──
