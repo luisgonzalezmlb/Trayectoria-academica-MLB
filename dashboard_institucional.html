@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dashboard Institucional · Liceo Bicentenario María Luisa Bombal · 2026</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -847,7 +848,7 @@ function renderDemografia() {
   window._demCharts = [];
 
   const cs   = Object.values(DEM.cursos).sort((a,b)=>a.grade-b.grade);
-  const COL_F = '#d96ba0', COL_M = '#3a7ec2';
+  const COL_F = '#6a4c93', COL_M = '#12786e';
   const nF = col.sexo.F, nM = col.sexo.M;
   const pF = col.total ? Math.round(nF/col.total*100) : 0;
   const pM = col.total ? Math.round(nM/col.total*100) : 0;
@@ -882,22 +883,28 @@ function renderDemografia() {
   // ── Sexo · dona (colegio) ──
   window._demCharts.push(new Chart(document.getElementById('dem-sex-donut'), {
     type:'doughnut',
+    plugins:[ChartDataLabels],
     data:{labels:['Femenino','Masculino'],
            datasets:[{data:[nF,nM],backgroundColor:[COL_F,COL_M],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'bottom',labels:{font:{size:11}}},
-        tooltip:{callbacks:{label:ctx=>ctx.label+': '+ctx.raw+' ('+Math.round(ctx.raw/col.total*100)+'%)'}}}}
+        tooltip:{callbacks:{label:ctx=>ctx.label+': '+ctx.raw+' ('+Math.round(ctx.raw/col.total*100)+'%)'}},
+        datalabels:{color:'#fff',font:{family:"'IBM Plex Sans',sans-serif",weight:'700',size:12},
+          formatter:(v)=>v?v+' ('+Math.round(v/col.total*100)+'%)':''}}}
   }));
 
   // ── Sexo · barra apilada por curso ──
   window._demCharts.push(new Chart(document.getElementById('dem-sex-bar'), {
     type:'bar',
+    plugins:[ChartDataLabels],
     data:{labels,datasets:[
       {label:'Femenino',data:cs.map(c=>c.sexo.F),backgroundColor:COL_F},
       {label:'Masculino',data:cs.map(c=>c.sexo.M),backgroundColor:COL_M},
     ]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:11}}},
+        datalabels:{color:'#fff',font:{family:"'IBM Plex Sans',sans-serif",weight:'600',size:10},
+          formatter:(v)=>v||''}},
       scales:{x:{stacked:true,beginAtZero:true,ticks:{precision:0,font:{size:10}}},
                y:{stacked:true,ticks:{font:{size:10}}}}}
   }));
