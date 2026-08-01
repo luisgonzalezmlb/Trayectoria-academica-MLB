@@ -188,6 +188,24 @@
   color:var(--accent);text-transform:uppercase;letter-spacing:.5px;
   margin-left:5px;vertical-align:middle;
 }
+.oa-th-tip { position:relative; cursor:help; border-bottom:1px dotted var(--muted); }
+.oa-tip-bubble {
+  visibility:hidden; opacity:0; position:absolute; top:calc(100% + 10px); left:50%;
+  transform:translateX(-50%); width:250px; max-width:55vw; background:var(--card);
+  color:var(--text); border:1px solid var(--border); border-radius:6px; padding:10px 12px;
+  font-size:11px; font-weight:400; font-family:var(--sans); line-height:1.45; text-align:left;
+  text-transform:none; letter-spacing:normal; box-shadow:0 6px 18px rgba(0,0,0,.2);
+  z-index:60; transition:opacity .15s; pointer-events:none;
+}
+.oa-tip-bubble::before {
+  content:''; position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
+  border:6px solid transparent; border-bottom-color:var(--border);
+}
+.oa-tip-bubble::after {
+  content:''; position:absolute; bottom:calc(100% - 1px); left:50%; transform:translateX(-50%);
+  border:5px solid transparent; border-bottom-color:var(--card);
+}
+.oa-th-tip:hover .oa-tip-bubble { visibility:visible; opacity:1; }
 </style>
 </head>
 <body>
@@ -4353,8 +4371,12 @@ function _diaOaTableHtml(c) {
     return `<td style="color:${diaColor(val)};font-weight:600">${val.toFixed(0)}%</td>`;
   }
 
-  // Cabecera de OA (uniforme, estilo std-table)
-  const oaHeaders = oaCols.map(oa => `<th>${oa}</th>`).join('');
+  // Cabecera de OA (uniforme, estilo std-table); con globo de detalle si hay descripción curricular
+  const oaHeaders = oaCols.map(oa => {
+    const desc = (OA_DESC && OA_DESC[c.curso] && OA_DESC[c.curso][oa]) || '';
+    if(!desc) return `<th>${oa}</th>`;
+    return `<th><span class="oa-th-tip">${oa}<span class="oa-tip-bubble">${desc}</span></span></th>`;
+  }).join('');
 
   // Fila de promedio del curso
   const avgCells = oaCols.map(oa => oaCell(c.oas?.[oa], false)).join('');
