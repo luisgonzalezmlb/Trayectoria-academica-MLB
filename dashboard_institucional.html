@@ -2474,6 +2474,15 @@ function buildDiaCurso(curso) {
   );
   if(!hasDia) return '';
 
+  // DIA Diagnóstico · Matemática reporta el resultado por OA de aprendizajes
+  // previos (no por eje temático), a diferencia de Monitoreo/Cierre. Para que
+  // sea comparable, se reagrupa por eje dominante usando el mismo cálculo ya
+  // disponible en Articulación curricular (DIA_MAT.por_eje), sin tocar esa
+  // pestaña ni su cómputo.
+  const oaCurso = (DIA_MAT || []).find(d => d.short === curso.grade_name);
+  const diagMatEjes = (oaCurso && oaCurso.por_eje && Object.keys(oaCurso.por_eje).length)
+    ? oaCurso.por_eje : null;
+
   const barHtml = (ejesObj, title) => {
     if(!ejesObj || !Object.keys(ejesObj).length)
       return `<div class="card"><div class="card-title">${title}</div><div class="no-data">Sin datos</div></div>`;
@@ -2490,10 +2499,13 @@ function buildDiaCurso(curso) {
 
   return _DIA_PERIODO_KEYS
     .filter(p => curso.dia?.[p]?.lectura || curso.dia?.[p]?.matematica)
-    .map(p => `<div class="g2 mb24">
-      ${barHtml(curso.dia[p]?.lectura,  `DIA ${_DIA_PERIODO_LABELS[p]} · Lectura · promedio por eje`)}
-      ${barHtml(curso.dia[p]?.matematica, `DIA ${_DIA_PERIODO_LABELS[p]} · Matemática · promedio por eje`)}
-    </div>`)
+    .map(p => {
+      const matEjes = (p === 'diagnostico' && diagMatEjes) ? diagMatEjes : curso.dia[p]?.matematica;
+      return `<div class="g2 mb24">
+        ${barHtml(curso.dia[p]?.lectura, `DIA ${_DIA_PERIODO_LABELS[p]} · Lectura · promedio por eje`)}
+        ${barHtml(matEjes, `DIA ${_DIA_PERIODO_LABELS[p]} · Matemática · promedio por eje`)}
+      </div>`;
+    })
     .join('');
 }
 
