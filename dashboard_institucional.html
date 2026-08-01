@@ -4087,27 +4087,13 @@ function _renderDiaResumenCurso() {
   const oaCurso = (DIA_MAT || []).find(d => d.short === c.grade_name && d.estudiantes && d.estudiantes.length);
   const oaHtml = oaCurso ? _diaOaTableHtml(oaCurso) : '';
 
+  // Reutiliza buildDiaCurso() (pestaña Cursos): una fila de casillas Lectura/Matemática
+  // por cada período DIA (Diagnóstico, Monitoreo, Cierre), en vez de mezclar todos los
+  // períodos apilados dentro de una sola caja.
   detalle.innerHTML = `
-    <div class="card mb24">
-      <div class="card-title">DIA · ${c.grade_name} · detalle por ejes</div>
-      <div class="g2">
-        <div>
-          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-            text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Lectura</div>
-          <div id="evst-dia-lect-${c.gen}"></div>
-        </div>
-        <div>
-          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-            text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>
-          <div id="evst-dia-mat-${c.gen}"></div>
-        </div>
-      </div>
-    </div>
+    ${buildDiaCurso(c)}
     ${oaHtml ? `<div class="mb24">${oaHtml}</div>`
              : '<div class="card mb24"><p style="color:var(--muted);font-size:13px;margin:0">Sin detalle de OA por estudiante para este curso (solo disponible en Matemática con articulación).</p></div>'}`;
-
-  _renderEvstDiaCourse(`evst-dia-lect-${c.gen}`, c, 'lectura');
-  _renderEvstDiaCourse(`evst-dia-mat-${c.gen}`,  c, 'matematica');
 }
 
 // ── DIA Sub: Articulación curricular ─────────────────────────
@@ -4448,34 +4434,6 @@ function _diaOaTableHtml(c) {
         </table>
       </div>
     </div>`;
-}
-
-function _renderEvstDiaCourse(containerId, c, materia) {
-  const container = document.getElementById(containerId);
-  if(!container) return;
-  const activePeriodos = _DIA_PERIODO_KEYS.filter(p =>
-    c.dia?.[p]?.[materia] && Object.keys(c.dia[p][materia]).length
-  );
-  if(!activePeriodos.length) {
-    container.innerHTML = '<span style="color:var(--muted);font-size:12px">Sin datos</span>';
-    return;
-  }
-  let html = '';
-  activePeriodos.forEach(pkey => {
-    html += `<div style="font-size:9px;font-family:var(--mono);color:var(--muted);
-      text-transform:uppercase;letter-spacing:1px;margin:8px 0 3px">${_DIA_PERIODO_LABELS[pkey]}</div>`;
-    Object.entries(c.dia[pkey][materia]).forEach(([eje, val]) => {
-      const col = diaColor(val);
-      html += `<div class="dia-bar-row">
-        <span class="dia-bar-label" style="min-width:130px;max-width:160px;width:auto">${eje}</span>
-        <div class="dia-bar-outer">
-          <div class="dia-bar-fill" style="width:${val}%;background:${col}"></div>
-        </div>
-        <span class="dia-val" style="color:${col}">${val}%</span>
-      </div>`;
-    });
-  });
-  container.innerHTML = html;
 }
 
 // ── SEPA ───────────────────────────────────────────────────
