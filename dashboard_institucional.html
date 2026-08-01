@@ -249,10 +249,10 @@
     </div>
   </div>
 
+  <div id="col-tray-card"></div>
+
   <div class="sec-title" style="margin-top:32px">Demografía · Matrícula</div>
   <div id="dem-body"></div>
-
-  <div id="col-tray-card"></div>
 
 </div>
 
@@ -2570,6 +2570,34 @@ function buildDiaSepaTrayCurso(curso, students) {
 
   // ── Chips de selección por estudiante ─────────────────────
   const selEl = document.getElementById('ct-ssel');
+  const _setAllStudentsCT = show => {
+    selEl.querySelectorAll('.dia-toggle[data-idx]').forEach(chip => {
+      const i = +chip.dataset.idx;
+      const color = _PAL[i % _PAL.length];
+      chip.classList.toggle('active', show);
+      chip.style.cssText = show
+        ? 'font-size:10px;padding:3px 8px;background:'+color+';border-color:'+color+';color:#fff'
+        : 'font-size:10px;padding:3px 8px;border-color:'+color+';color:var(--text)';
+      _cursoTrayCharts.forEach(ch => {
+        const ds = ch.data.datasets[i+1];
+        if(ds) ds.hidden = !show;
+      });
+    });
+    _cursoTrayCharts.forEach(ch => ch.update());
+  };
+  const _mkCtrlBtnCT = (lbl, fn) => {
+    const b = document.createElement('button');
+    b.className = 'dia-toggle';
+    b.style.cssText = 'font-size:10px;padding:3px 10px';
+    b.textContent = lbl;
+    b.onclick = fn;
+    return b;
+  };
+  selEl.appendChild(_mkCtrlBtnCT('Todas',   () => _setAllStudentsCT(true)));
+  selEl.appendChild(_mkCtrlBtnCT('Ninguna', () => _setAllStudentsCT(false)));
+  const _sepCT = document.createElement('span');
+  _sepCT.style.cssText = 'width:1px;background:var(--border);display:inline-block;margin:0 2px;align-self:stretch';
+  selEl.appendChild(_sepCT);
   students.forEach((s, i) => {
     const color = _PAL[i % _PAL.length];
     const pts   = s.nombre.replace(',','').split(/\s+/).filter(Boolean);
@@ -2579,6 +2607,7 @@ function buildDiaSepaTrayCurso(curso, students) {
     chip.className = 'dia-toggle';
     chip.textContent = lbl;
     chip.title = s.nombre;
+    chip.dataset.idx = i;
     chip.style.cssText = 'font-size:10px;padding:3px 8px;border-color:'+color+';color:var(--text)';
     chip.onclick = () => {
       const on = chip.classList.toggle('active');
