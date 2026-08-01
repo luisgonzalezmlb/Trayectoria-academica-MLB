@@ -4716,27 +4716,53 @@ function _renderSepaResumenCurso() {
     const groups = {};
     (items || []).forEach(o => {
       if(!o.tipo || o.pct == null) return;
-      if(!groups[o.tipo]) groups[o.tipo] = [];
-      groups[o.tipo].push(o.pct);
+      if(!groups[o.tipo]) groups[o.tipo] = { eje: o.eje, vals: [] };
+      groups[o.tipo].vals.push(o.pct);
     });
     return Object.entries(groups)
-      .map(([tipo, arr]) => [tipo, Math.round(arr.reduce((a,b)=>a+b,0)/arr.length), arr.length])
-      .sort((a,b) => a[1]-b[1]);
+      .map(([tipo, g]) => [tipo, Math.round(g.vals.reduce((a,b)=>a+b,0)/g.vals.length), g.vals.length, g.eje]);
   }
-  const lTipos = _avgByTipo(rec.lenguaje);
-  const mTipos = _avgByTipo(rec.matematica);
+  // Orden curricular Bases Curriculares Matemática MINEDUC: ejes en su
+  // secuencia oficial (Números, Álgebra y Funciones, Geometría, Probabilidad
+  // y Estadística) y, dentro de cada eje, la progresión habitual de
+  // contenidos con que se introducen en el año escolar. Subejes no listados
+  // (nomenclatura nueva no contemplada) caen al final de su eje.
+  const _MAT_EJE_ORDER = { num: 0, alg: 1, geo: 2, eyp: 3 };
+  const _MAT_SUBEJE_ORDER = {
+    'Números naturales': 0, 'Operaciones de números natural': 1,
+    'Números enteros': 2, 'Números racionales': 3, 'Proporcionalidad': 4,
+    'Potencias': 5, 'Raíces': 6, 'Números reales': 7,
+    'Potencias, raíces y logaritmos': 8, 'Números complejos': 9,
+    'Lenguaje algebraico': 0, 'Ecuaciones': 1, 'Ecuaciones e inecuaciones': 1,
+    'Sistemas de ecuaciones lineale': 2, 'Funciones': 3,
+    'Orientación en el espacio': 0, 'Formas geométricas': 1,
+    'Transformaciones isométricas': 2, 'Medición': 3,
+    'Medición (Perímetro)': 4, 'Medición (Área)': 5, 'Medición (Volumen)': 6,
+    'Plano cartesiano': 7, 'Semejanza de figuras planas': 8,
+    'Razones Trigonométricas': 9,
+    'Estadística': 0, 'Probabilidad': 1,
+  };
+  function _matCurricOrder(tipo, eje) {
+    const ejeP = _MAT_EJE_ORDER[eje] ?? 9;
+    const subP = _MAT_SUBEJE_ORDER[tipo] ?? 50;
+    return ejeP * 100 + subP;
+  }
+  const lTipos = _avgByTipo(rec.lenguaje).sort((a,b) => a[1]-b[1]);
+  const mTipos = _avgByTipo(rec.matematica)
+    .sort((a,b) => _matCurricOrder(a[0],a[3]) - _matCurricOrder(b[0],b[3]));
   let tipoHtml = '';
   if(lTipos.length || mTipos.length) {
     tipoHtml = `<div class="card mb24">
       <div class="card-title" style="margin-bottom:14px">
         Logro promedio por tipo de texto y subeje
-        <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">de menor a mayor logro · N° de preguntas entre paréntesis</span>
+        <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">N° de preguntas entre paréntesis</span>
       </div>
       <div class="g2" style="gap:24px">
         <div>
           <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
             text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
             Lenguaje · Tipo de texto
+            <span style="text-transform:none;letter-spacing:0">· de menor a mayor logro</span>
           </div>
           ${lTipos.length ? lTipos.map(([tipo,pct,n]) => _ejeBar(`${tipo} (${n})`, pct)).join('')
             : '<p style="color:var(--muted);font-size:12px">Sin datos.</p>'}
@@ -4745,6 +4771,7 @@ function _renderSepaResumenCurso() {
           <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
             text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
             Matemática · Subeje
+            <span style="text-transform:none;letter-spacing:0">· orden curricular</span>
           </div>
           ${mTipos.length ? mTipos.map(([tipo,pct,n]) => _ejeBar(`${tipo} (${n})`, pct)).join('')
             : '<p style="color:var(--muted);font-size:12px">Sin datos.</p>'}
