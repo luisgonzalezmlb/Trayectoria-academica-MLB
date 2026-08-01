@@ -4744,6 +4744,48 @@ function _renderSepaResumenCurso() {
     </div>`;
   }
 
+  // ── Logro promedio por tipo de texto (Lenguaje) / subeje (Matemática) ──
+  function _avgByTipo(items) {
+    const groups = {};
+    (items || []).forEach(o => {
+      if(!o.tipo || o.pct == null) return;
+      if(!groups[o.tipo]) groups[o.tipo] = [];
+      groups[o.tipo].push(o.pct);
+    });
+    return Object.entries(groups)
+      .map(([tipo, arr]) => [tipo, Math.round(arr.reduce((a,b)=>a+b,0)/arr.length), arr.length])
+      .sort((a,b) => a[1]-b[1]);
+  }
+  const lTipos = _avgByTipo(rec.lenguaje);
+  const mTipos = _avgByTipo(rec.matematica);
+  let tipoHtml = '';
+  if(lTipos.length || mTipos.length) {
+    tipoHtml = `<div class="card mb24">
+      <div class="card-title" style="margin-bottom:14px">
+        Logro promedio por tipo de texto y subeje · ${rec.grade_name}${varTagInline}
+        <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">de menor a mayor logro · N° de preguntas entre paréntesis</span>
+      </div>
+      <div class="g2" style="gap:24px">
+        <div>
+          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+            text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+            Lenguaje · Tipo de texto
+          </div>
+          ${lTipos.length ? lTipos.map(([tipo,pct,n]) => _ejeBar(`${tipo} (${n})`, pct)).join('')
+            : '<p style="color:var(--muted);font-size:12px">Sin datos.</p>'}
+        </div>
+        <div>
+          <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+            text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+            Matemática · Subeje
+          </div>
+          ${mTipos.length ? mTipos.map(([tipo,pct,n]) => _ejeBar(`${tipo} (${n})`, pct)).join('')
+            : '<p style="color:var(--muted);font-size:12px">Sin datos.</p>'}
+        </div>
+      </div>
+    </div>`;
+  }
+
   // ── OA tables ───────────────────────────────────────────────
   const idL = `oa-L-${key}`;
   const idM = `oa-M-${key}`;
@@ -4762,7 +4804,7 @@ function _renderSepaResumenCurso() {
   // ── Detalle por estudiante ──────────────────────────────────
   const stuCard = _sepaEstudiantesHtml(rec.grade_name);
 
-  det.innerHTML = ejeHtml + oaCard + stuCard;
+  det.innerHTML = ejeHtml + tipoHtml + oaCard + stuCard;
 }
 
 function _sepaOaTableHtml(items, asig, tbodyId) {
