@@ -4874,17 +4874,6 @@ function _sepaEstudiantesHtml(gradeName) {
   });
   if(!students.length) return '';
 
-  let latestYear = 0;
-  students.forEach(s => {
-    ['lenguaje','matematica'].forEach(mat => {
-      Object.keys(s.sepa[mat] ?? {}).forEach(k => {
-        const y = parseInt(k.split('_')[0]);
-        if(y > latestYear) latestYear = y;
-      });
-    });
-  });
-  if(!latestYear) return '';
-
   function _ptsColor(pts) {
     return pts == null ? 'var(--muted)' : pts < 500 ? 'var(--red)' : pts < 600 ? '#c07a00' : '#1a7f5e';
   }
@@ -4894,38 +4883,68 @@ function _sepaEstudiantesHtml(gradeName) {
       : `<td style="text-align:center;padding:4px 10px;color:var(--muted);font-size:11px">—</td>`;
   }
 
-  const rows = students
-    .sort((a,b) => a.nombre.localeCompare(b.nombre))
-    .map(s => {
-      const lP = s.sepa?.lenguaje?.[`${latestYear}_P`] ?? null;
-      const lF = s.sepa?.lenguaje?.[`${latestYear}_F`] ?? null;
-      const mP = s.sepa?.matematica?.[`${latestYear}_P`] ?? null;
-      const mF = s.sepa?.matematica?.[`${latestYear}_F`] ?? null;
-      return `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:4px 8px;font-size:12px">${s.nombre}</td>
-        ${_ptsCell(lP)}${_ptsCell(lF)}${_ptsCell(mP)}${_ptsCell(mF)}
-      </tr>`;
+  function _subjTable(mat, titulo) {
+    const keySet = new Set();
+    students.forEach(s => {
+      Object.keys(s.sepa?.[mat] ?? {}).forEach(k => { if(parseInt(k) >= 2022) keySet.add(k); });
+    });
+    if(!keySet.size) return '';
+    const keys = [...keySet].sort((a,b) => {
+      const ka = a.replace('_P','_0').replace('_F','_1');
+      const kb = b.replace('_P','_0').replace('_F','_1');
+      return ka.localeCompare(kb);
+    });
+    const years = [...new Set(keys.map(k => k.split('_')[0]))];
+
+    const yearHeaderCells = years.map(y => {
+      const cnt = keys.filter(k => k.startsWith(y+'_')).length;
+      return `<th style="text-align:center;padding:5px 8px;border-bottom:1px solid var(--border)" colspan="${cnt}">${y}</th>`;
+    }).join('');
+    const subHeaderCells = keys.map(k => {
+      const lbl = k.endsWith('_P') ? 'Inicio' : k.endsWith('_F') ? 'Fin' : k.split('_')[1];
+      return `<th style="text-align:center;padding:4px 10px;font-weight:400;font-size:10px;color:var(--muted)">${lbl}</th>`;
     }).join('');
 
+    const rows = students
+      .filter(s => keys.some(k => (s.sepa?.[mat]?.[k]) != null))
+      .sort((a,b) => a.nombre.localeCompare(b.nombre))
+      .map(s => {
+        const cells = keys.map(k => _ptsCell(s.sepa?.[mat]?.[k] ?? null)).join('');
+        return `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:4px 8px;font-size:12px;white-space:nowrap">${s.nombre}</td>
+          ${cells}
+        </tr>`;
+      }).join('');
+
+    return `<div style="margin-bottom:20px">
+      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
+        text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${titulo}</div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);background:var(--surface)">
+            <th style="text-align:left;padding:5px 8px" rowspan="2">Estudiante</th>
+            ${yearHeaderCells}
+          </tr>
+          <tr style="border-bottom:2px solid var(--border);background:var(--surface)">
+            ${subHeaderCells}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  const lengHtml = _subjTable('lenguaje',   'Lenguaje');
+  const matHtml  = _subjTable('matematica', 'Matemática');
+  if(!lengHtml && !matHtml) return '';
+
   return `<div class="card mb24">
-    <div class="card-title" style="margin-bottom:14px">Detalle por estudiante · SEPA ${latestYear}</div>
-    <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead>
-        <tr style="border-bottom:1px solid var(--border);background:var(--surface)">
-          <th style="text-align:left;padding:5px 8px" rowspan="2">Estudiante</th>
-          <th style="text-align:center;padding:5px 8px;border-bottom:1px solid var(--border)" colspan="2">Lenguaje</th>
-          <th style="text-align:center;padding:5px 8px;border-bottom:1px solid var(--border)" colspan="2">Matemática</th>
-        </tr>
-        <tr style="border-bottom:2px solid var(--border);background:var(--surface)">
-          <th style="text-align:center;padding:4px 10px;font-weight:400;font-size:10px;color:var(--muted)">Inicio ${latestYear}</th>
-          <th style="text-align:center;padding:4px 10px;font-weight:400;font-size:10px;color:var(--muted)">Fin ${latestYear}</th>
-          <th style="text-align:center;padding:4px 10px;font-weight:400;font-size:10px;color:var(--muted)">Inicio ${latestYear}</th>
-          <th style="text-align:center;padding:4px 10px;font-weight:400;font-size:10px;color:var(--muted)">Fin ${latestYear}</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table></div>
+    <div class="card-title" style="margin-bottom:14px">Trayectoria por estudiante · SEPA
+      <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">todas las mediciones disponibles desde 2022, por asignatura</span>
+    </div>
+    ${lengHtml}
+    ${matHtml}
   </div>`;
 }
 
