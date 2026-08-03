@@ -3055,29 +3055,6 @@ function openStudent(key) {
     </div>
   </div>`;
 
-  // ── Notas · año en curso ───────────────────────────────────
-  if(nd_curr) {
-    const notaCols = (nd_curr.col_map || []).filter(c => !c.np);
-    if(notaCols.length) {
-      const notaRows = notaCols.map(c => {
-        const v = nd_curr.asignaturas?.[c.key] ?? null;
-        return `<tr>
-          <td>${c.label}</td>
-          <td style="text-align:right;font-family:var(--mono)" class="${nc(v)}">${ns(v)}</td>
-        </tr>`;
-      }).join('');
-      html += `<div class="card mb24">
-        <span class="card-title">Notas · ${CUR_YEAR}</span>
-        <div style="overflow-x:auto;margin-top:8px">
-          <table class="std-table">
-            <thead><tr><th style="text-align:left">Asignatura</th><th style="text-align:right">Nota Final</th></tr></thead>
-            <tbody>${notaRows}</tbody>
-          </table>
-        </div>
-      </div>`;
-    }
-  }
-
   // ── Contacto apoderado ────────────────────────────────────
   if(s.contactos && s.contactos.length) {
     const items = s.contactos.map(c=>{
@@ -3094,6 +3071,60 @@ function openStudent(key) {
       <span class="card-title">Contacto apoderado</span>
       <div style="margin-top:4px">${items}</div>
     </div>`;
+  }
+
+  // ── Notas · año en curso ───────────────────────────────────
+  if(nd_curr) {
+    const notaCols = (nd_curr.col_map || []).filter(c => !c.np);
+    if(notaCols.length) {
+      const notaRows = notaCols.map(c => {
+        const v = nd_curr.asignaturas?.[c.key] ?? null;
+        return `<tr>
+          <td>${c.label}</td>
+          <td style="text-align:right;font-family:var(--mono)" class="${nc(v)}">${ns(v)}</td>
+        </tr>`;
+      }).join('');
+
+      // Detalle de notas por semestre (Nota 1, Nota 2, ... — sin nombre de evaluación)
+      const semTables = ['1','2'].map(sem => {
+        const semLabel = sem === '1' ? '1er Semestre' : '2do Semestre';
+        const bySubj = notaCols.map(c => ({
+          c,
+          notas: (nd_curr.evals?.[c.key]?.[sem] || [])
+            .map(e => e.grade).filter(g => g != null)
+        })).filter(x => x.notas.length);
+        if(!bySubj.length) return '';
+        const maxN = Math.max(...bySubj.map(x => x.notas.length));
+        const head = Array.from({length:maxN}, (_,i)=>`<th style="text-align:right">Nota ${i+1}</th>`).join('');
+        const rows = bySubj.map(({c, notas}) => {
+          const cells = Array.from({length:maxN}, (_,i) => {
+            const v = notas[i] ?? null;
+            return `<td style="text-align:right;font-family:var(--mono)" class="${v!=null?nc(v):''}">${v!=null?ns(v):'—'}</td>`;
+          }).join('');
+          return `<tr><td>${c.label}</td>${cells}</tr>`;
+        }).join('');
+        return `<div style="margin-top:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">${semLabel}</div>
+          <div style="overflow-x:auto">
+            <table class="std-table">
+              <thead><tr><th style="text-align:left">Asignatura</th>${head}</tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+      }).join('');
+
+      html += `<div class="card mb24">
+        <span class="card-title">Notas · ${CUR_YEAR}</span>
+        <div style="overflow-x:auto;margin-top:8px">
+          <table class="std-table">
+            <thead><tr><th style="text-align:left">Asignatura</th><th style="text-align:right">Nota Final</th></tr></thead>
+            <tbody>${notaRows}</tbody>
+          </table>
+        </div>
+        ${semTables}
+      </div>`;
+    }
   }
 
   // ── Trayectoria ───────────────────────────────────────────
@@ -4810,74 +4841,97 @@ function _sepaEstudiantesHtml(gradeName) {
   function _ptsColor(pts) {
     return pts == null ? 'var(--muted)' : pts < 500 ? 'var(--red)' : pts < 600 ? '#c07a00' : '#1a7f5e';
   }
-  function _ptsCell(v) {
+  function _ptsCell(v, divider) {
+    const bd = divider ? 'border-left:2px solid var(--border);' : '';
     return v != null
-      ? `<td style="text-align:center;padding:4px 10px;font-family:var(--mono);font-size:11px;font-weight:600;color:${_ptsColor(v)}">${v}</td>`
-      : `<td style="text-align:center;padding:4px 10px;color:var(--muted);font-size:11px">—</td>`;
+      ? `<td style="text-align:center;padding:4px 10px;font-family:var(--mono);font-size:11px;font-weight:600;color:${_ptsColor(v)};${bd}">${v}</td>`
+      : `<td style="text-align:center;padding:4px 10px;color:var(--muted);font-size:11px;${bd}">—</td>`;
   }
 
-  function _subjTable(mat, titulo) {
+  function _yearGroups(keys) {
+    const groups = [];
+    keys.forEach(k => {
+      const y = k.split('_')[0];
+      const last = groups[groups.length - 1];
+      if(last && last.year === y) last.count++;
+      else groups.push({ year: y, count: 1 });
+    });
+    return groups;
+  }
+
+  const mats = [
+    { key: 'lenguaje',   label: 'Lenguaje' },
+    { key: 'matematica', label: 'Matemática' }
+  ].map(m => {
     const keySet = new Set();
     students.forEach(s => {
-      Object.keys(s.sepa?.[mat] ?? {}).forEach(k => { if(parseInt(k) >= 2022) keySet.add(k); });
+      Object.keys(s.sepa?.[m.key] ?? {}).forEach(k => { if(parseInt(k) >= 2022) keySet.add(k); });
     });
-    if(!keySet.size) return '';
     const keys = [...keySet].sort((a,b) => {
       const ka = a.replace('_P','_0').replace('_F','_1');
       const kb = b.replace('_P','_0').replace('_F','_1');
       return ka.localeCompare(kb);
     });
-    const years = [...new Set(keys.map(k => k.split('_')[0]))];
+    return { ...m, keys };
+  }).filter(m => m.keys.length);
 
-    const yearHeaderCells = years.map(y => {
-      const cnt = keys.filter(k => k.startsWith(y+'_')).length;
-      return `<th style="text-align:center;padding:5px 8px;border-bottom:1px solid var(--border)" colspan="${cnt}">${y}</th>`;
+  if(!mats.length) return '';
+
+  const subjHeaderCells = mats.map((m, mi) => {
+    const bd = mi > 0 ? 'border-left:2px solid var(--border);' : '';
+    return `<th colspan="${m.keys.length}" style="text-align:center;padding:5px 8px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);${bd}">${m.label}</th>`;
+  }).join('');
+
+  const yearHeaderCells = mats.map((m, mi) => {
+    const groups = _yearGroups(m.keys);
+    return groups.map((g, gi) => {
+      const bd = (mi > 0 && gi === 0) ? 'border-left:2px solid var(--border);' : '';
+      return `<th style="text-align:center;padding:5px 8px;border-bottom:1px solid var(--border);${bd}" colspan="${g.count}">${g.year}</th>`;
     }).join('');
-    const subHeaderCells = keys.map(k => {
+  }).join('');
+
+  const subHeaderCells = mats.map((m, mi) => {
+    return m.keys.map((k, ki) => {
+      const bd = (mi > 0 && ki === 0) ? 'border-left:2px solid var(--border);' : '';
       const lbl = k.endsWith('_P') ? 'Inicio' : k.endsWith('_F') ? 'Fin' : k.split('_')[1];
-      return `<th style="text-align:center;padding:4px 10px;font-weight:400;font-size:10px;color:var(--muted)">${lbl}</th>`;
+      return `<th style="text-align:center;padding:4px 10px;font-weight:400;font-size:10px;color:var(--muted);${bd}">${lbl}</th>`;
     }).join('');
+  }).join('');
 
-    const rows = students
-      .filter(s => keys.some(k => (s.sepa?.[mat]?.[k]) != null))
-      .sort((a,b) => a.nombre.localeCompare(b.nombre))
-      .map(s => {
-        const cells = keys.map(k => _ptsCell(s.sepa?.[mat]?.[k] ?? null)).join('');
-        return `<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:4px 8px;font-size:12px;white-space:nowrap">${s.nombre}</td>
-          ${cells}
-        </tr>`;
-      }).join('');
-
-    return `<div style="margin-bottom:20px">
-      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-        text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${titulo}</div>
-      <div style="overflow-x:auto">
-      <table class="subj-table" style="width:100%;font-size:12px">
-        <thead>
-          <tr style="border-bottom:1px solid var(--border);background:var(--surface)">
-            <th style="text-align:left;padding:5px 8px" rowspan="2">Estudiante</th>
-            ${yearHeaderCells}
-          </tr>
-          <tr style="border-bottom:2px solid var(--border);background:var(--surface)">
-            ${subHeaderCells}
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table></div>
-    </div>`;
-  }
-
-  const lengHtml = _subjTable('lenguaje',   'Lenguaje');
-  const matHtml  = _subjTable('matematica', 'Matemática');
-  if(!lengHtml && !matHtml) return '';
+  const rows = students
+    .filter(s => mats.some(m => m.keys.some(k => (s.sepa?.[m.key]?.[k]) != null)))
+    .sort((a,b) => a.nombre.localeCompare(b.nombre))
+    .map(s => {
+      const cells = mats.map((m, mi) =>
+        m.keys.map((k, ki) => _ptsCell(s.sepa?.[m.key]?.[k] ?? null, mi > 0 && ki === 0)).join('')
+      ).join('');
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:4px 8px;font-size:12px;white-space:nowrap;cursor:pointer;color:var(--accent)"
+          onclick="openStudent('${s.key}');showTab('estudiantes',document.querySelector('nav button:nth-child(4)'))">${s.nombre}</td>
+        ${cells}
+      </tr>`;
+    }).join('');
 
   return `<div class="card mb24">
     <div class="card-title" style="margin-bottom:14px">Trayectoria por estudiante · SEPA
-      <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">todas las mediciones disponibles desde 2022, por asignatura</span>
+      <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">todas las mediciones disponibles desde 2022 · Lenguaje y Matemática</span>
     </div>
-    ${lengHtml}
-    ${matHtml}
+    <div style="overflow-x:auto">
+    <table class="subj-table" style="width:100%;font-size:12px">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);background:var(--surface)">
+          <th style="text-align:left;padding:5px 8px" rowspan="3">Estudiante</th>
+          ${subjHeaderCells}
+        </tr>
+        <tr style="background:var(--surface)">
+          ${yearHeaderCells}
+        </tr>
+        <tr style="border-bottom:2px solid var(--border);background:var(--surface)">
+          ${subHeaderCells}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table></div>
   </div>`;
 }
 
