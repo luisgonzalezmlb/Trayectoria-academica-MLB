@@ -4404,17 +4404,17 @@ function renderEvstSepa() {
   const container = document.getElementById('tab-evst-sepa');
   container.innerHTML = `
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
-      <button class="filter-btn active" id="sepa-sub-btn-estado"
-              onclick="switchSepaSub('estado')">Trayectoria</button>
-      <button class="filter-btn" id="sepa-sub-btn-resultados"
+      <button class="filter-btn active" id="sepa-sub-btn-resultados"
               onclick="switchSepaSub('resultados')">Resultados</button>
+      <button class="filter-btn" id="sepa-sub-btn-estado"
+              onclick="switchSepaSub('estado')">Trayectoria</button>
     </div>
-    <div id="sepa-sub-estado"></div>
-    <div id="sepa-sub-resultados" style="display:none"></div>`;
-  switchSepaSub('estado');
+    <div id="sepa-sub-resultados"></div>
+    <div id="sepa-sub-estado" style="display:none"></div>`;
+  switchSepaSub('resultados');
 }
 
-let _sepaSub = 'estado';
+let _sepaSub = 'resultados';
 function switchSepaSub(tab) {
   _sepaSub = tab;
   ['estado','resultados'].forEach(t => {
