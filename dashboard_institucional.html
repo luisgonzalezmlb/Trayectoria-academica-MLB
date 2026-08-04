@@ -698,10 +698,13 @@ function renderResultadosAnt() {
 
   const egresados = recs.filter(r => r.situacion === 1);
   const reproceso = recs.filter(r => r.situacion !== 1);
-  const clec_vals      = recs.map(r => r.clec).filter(v => v);
-  const mate1_vals     = recs.map(r => r.mate1).filter(v => v);
-  const pct_clec_vals  = recs.map(r => r.pct_clec).filter(v => v !== null && v !== undefined);
-  const pct_mate1_vals = recs.map(r => r.pct_mate1).filter(v => v !== null && v !== undefined);
+  // Promedios y percentil solo de egresados: el reproceso son estudiantes de
+  // generaciones anteriores rindiendo de nuevo y distorsionarían el resultado
+  // de la generación que egresa en este proceso de admisión.
+  const clec_vals      = egresados.map(r => r.clec).filter(v => v);
+  const mate1_vals     = egresados.map(r => r.mate1).filter(v => v);
+  const pct_clec_vals  = egresados.map(r => r.pct_clec).filter(v => v !== null && v !== undefined);
+  const pct_mate1_vals = egresados.map(r => r.pct_mate1).filter(v => v !== null && v !== undefined);
   const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
   const med = arr => { if(!arr.length) return null; const s=[...arr].sort((a,b)=>a-b); return s[Math.floor(s.length/2)]; };
   const mCL = med(pct_clec_vals), mM1 = med(pct_mate1_vals);
