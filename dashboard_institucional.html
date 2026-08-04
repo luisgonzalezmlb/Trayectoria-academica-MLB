@@ -4303,15 +4303,20 @@ function toggleArticRow(rid) {
 // piloto que se evaluará antes de decidir si se unifica con esa función.
 function renderDiaTrayTab() {
   const container = document.getElementById('dia-sub-tray');
-  const hasAny = CURSOS.some(c => c.dia && Object.keys(c.dia).length > 0);
+  // La clickabilidad se determina con los datos DIA históricos por estudiante
+  // (s.dia, multi-año), no con c.dia (que sólo trae el año actual). El DIA no
+  // se aplica sobre II° Medio, así que III°/IV° Medio nunca tendrían c.dia —
+  // pero sí arrastran datos DIA de años anteriores, cuando la misma cohorte
+  // cursaba niveles donde el DIA sí se rinde. Esos datos históricos siguen
+  // siendo relevantes para la trayectoria de la generación.
+  const _cursoTieneDiaHistorico = gen => EST.some(s =>
+    s.gen === gen && s.napsis[CUR_YEAR] && !s.retirado && Object.keys(s.dia).length > 0);
+  const cursosDia = CURSOS.filter(c => _cursoTieneDiaHistorico(c.gen));
+  const hasAny = cursosDia.length > 0;
   if(!hasAny) {
     container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos DIA disponibles.</p>';
     return;
   }
-  const cursosDia = CURSOS.filter(c => c.dia && _DIA_PERIODO_KEYS.some(p =>
-    (c.dia[p]?.lectura    && Object.keys(c.dia[p].lectura).length) ||
-    (c.dia[p]?.matematica && Object.keys(c.dia[p].matematica).length)
-  ));
   const rows = CURSOS.map(c => {
     const clickable = cursosDia.some(cd => cd.gen === c.gen);
     return `<tr${clickable ? ` style="cursor:pointer" onclick="_diaTrayOpenCurso(${c.gen})"` : ''}>
@@ -4414,39 +4419,72 @@ function buildDiaTrayCurso(curso, students) {
     return;
   }
 
+  // Un promedio de curso calculado con muy pocos estudiantes (típicamente porque
+  // el resto de la generación actual todavía no estaba matriculada ese año, o
+  // faltó a esa evaluación) no es representativo. Bajo este mínimo, el punto se
+  // oculta (queda como quiebre en la línea) en vez de mostrar un promedio engañoso.
+  const DIA_TRAY_MIN_N = 5;
+
+  // Promedio de curso + n° de estudiantes que aportan el dato, para un arreglo
+  // de valores individuales (puede incluir null). Aplica el umbral DIA_TRAY_MIN_N.
+  const _avgN = arr => {
+    const vs = arr.filter(v => v != null);
+    const n = vs.length;
+    return { val: n >= DIA_TRAY_MIN_N ? +(vs.reduce((a,b)=>a+b,0)/n).toFixed(1) : null, n };
+  };
+
   // ── Gráfico agregado (promedio Lectura / Matemática, con superposición por estudiante) ──
-  const diaLAvg = diaPts.map(p => _avg(students.map(s=>_diaAvg(s.dia[p.yr]?.[p.pkey]?.lectura)).filter(v=>v!==null)));
-  const diaMAvg = diaPts.map(p => _avg(students.map(s=>_diaAvg(s.dia[p.yr]?.[p.pkey]?.matematica)).filter(v=>v!==null)));
+  const diaLPts = diaPts.map(p => _avgN(students.map(s=>_diaAvg(s.dia[p.yr]?.[p.pkey]?.lectura))));
+  const diaMPts = diaPts.map(p => _avgN(students.map(s=>_diaAvg(s.dia[p.yr]?.[p.pkey]?.matematica))));
+  const diaLAvg = diaLPts.map(p=>p.val), diaLN = diaLPts.map(p=>p.n);
+  const diaMAvg = diaMPts.map(p=>p.val), diaMN = diaMPts.map(p=>p.n);
 
   // ── DIA Diagnóstico · Matemática reporta por OA, no por eje. Para el punto  ──
   // de Diagnóstico se reutiliza el mismo reagrupamiento por eje ya disponible
   // en Articulación curricular (DIA_MAT.por_eje), igual que en buildDiaCurso.
+  // Ese promedio ya viene calculado sobre el curso completo que rindió el DIA ese
+  // año (no solo los que coinciden con la matrícula actual) — no aplica el umbral
+  // de representatividad ni tiene un n por-estudiante disponible aquí.
   const oaCursoMat = (DIA_MAT || []).find(d => d.short === curso.grade_name);
   const diagMatEjes = (oaCursoMat && oaCursoMat.por_eje && Object.keys(oaCursoMat.por_eje).length)
     ? oaCursoMat.por_eje : null;
 
+  // Los nombres de eje pueden llegar con variantes de acentuación/espacios entre
+  // años y fuentes (Excel/PDF); se normalizan a una clave común para no separar
+  // en dos líneas (o colisionar IDs de canvas) lo que es el mismo eje.
+  const _normEje = e => e.normalize('NFKC').trim().toLowerCase();
+
   const _ejesFor = materia => {
-    const set = new Set();
+    const map = new Map(); // normKey -> etiqueta a mostrar (primera variante vista)
     diaPts.forEach(p => {
       if(materia === 'matematica' && p.pkey === 'diagnostico' && diagMatEjes) {
-        Object.keys(diagMatEjes).forEach(e => set.add(e));
+        Object.keys(diagMatEjes).forEach(e => { const k=_normEje(e); if(!map.has(k)) map.set(k,e); });
         return;
       }
-      students.forEach(s => Object.keys(s.dia[p.yr]?.[p.pkey]?.[materia] || {}).forEach(e => set.add(e)));
+      students.forEach(s => Object.keys(s.dia[p.yr]?.[p.pkey]?.[materia] || {}).forEach(e => {
+        const k = _normEje(e); if(!map.has(k)) map.set(k, e);
+      }));
     });
-    return [...set];
+    return [...map.entries()]; // [[normKey, etiqueta], ...]
   };
   const ejesLec = _ejesFor('lectura');
   const ejesMat = _ejesFor('matematica');
 
-  // Promedio de curso para un eje en un punto del timeline; null si no hay dato
-  // por-estudiante disponible (caso Diagnóstico Matemática, ver nota arriba).
-  const _ejeCursoAvg = (materia, eje, p) => {
+  // Promedio de curso para un eje (identificado por su clave normalizada) en un
+  // punto del timeline. Retorna {val, n}; val es null si no hay dato o si n
+  // queda bajo el umbral de representatividad (excepto el caso Diagnóstico
+  // Matemática, ver nota arriba, donde n queda como null — curso completo).
+  const _ejeCursoAvg = (materia, normKey, p) => {
     if(materia === 'matematica' && p.pkey === 'diagnostico' && diagMatEjes) {
-      return (eje in diagMatEjes) ? diagMatEjes[eje] : null;
+      const match = Object.keys(diagMatEjes).find(e => _normEje(e) === normKey);
+      return { val: match ? diagMatEjes[match] : null, n: null };
     }
-    const vs = students.map(s => s.dia[p.yr]?.[p.pkey]?.[materia]?.[eje]).filter(v => v != null);
-    return vs.length ? +(vs.reduce((a,b)=>a+b,0)/vs.length).toFixed(1) : null;
+    return _avgN(students.map(s => {
+      const obj = s.dia[p.yr]?.[p.pkey]?.[materia];
+      if(!obj) return null;
+      const key = Object.keys(obj).find(e => _normEje(e) === normKey);
+      return key ? obj[key] : null;
+    }));
   };
 
   const _PAL = ['#e74c3c','#27ae60','#f39c12','#8e44ad','#2980b9',
@@ -4473,10 +4511,10 @@ function buildDiaTrayCurso(curso, students) {
       'Permite ver qué eje viene estancado o retrocediendo a través de los ciclos.</p>';
     if(ejesLec.length) html += '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
       'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Lectura</div>' +
-      '<div class="g2" style="margin-bottom:22px">' + ejesLec.map(e => _sub(e, 'dtray-eje-lec-'+_slug(e))).join('') + '</div>';
+      '<div class="g2" style="margin-bottom:22px">' + ejesLec.map(([k,lbl]) => _sub(lbl, 'dtray-eje-lec-'+_slug(k))).join('') + '</div>';
     if(ejesMat.length) html += '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
       'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>' +
-      '<div class="g2">' + ejesMat.map(e => _sub(e, 'dtray-eje-mat-'+_slug(e))).join('') + '</div>';
+      '<div class="g2">' + ejesMat.map(([k,lbl]) => _sub(lbl, 'dtray-eje-mat-'+_slug(k))).join('') + '</div>';
     html += '</div>';
   }
 
@@ -4543,12 +4581,23 @@ function buildDiaTrayCurso(curso, students) {
   });
 
   // ── Factory de gráficos ───────────────────────────────────
+  // Tooltip: para el dataset "Promedio curso" agrega cuántos estudiantes aportan
+  // el dato (nCounts[i] === null → curso completo/histórico, sin n por-estudiante).
   const _mkOpts = () => ({
     responsive:true, maintainAspectRatio:false,
     interaction:{mode:'index',intersect:false},
     plugins:{
       legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.raw!=null?ctx.raw+'%':'—')}},
+      tooltip:{callbacks:{label:ctx => {
+        if(ctx.raw == null) return ctx.dataset.label + ': sin dato';
+        let txt = ctx.dataset.label + ': ' + ctx.raw + '%';
+        const nArr = ctx.dataset.nCounts;
+        if(nArr) {
+          const n = nArr[ctx.dataIndex];
+          txt += n == null ? ' (curso completo)' : ' (n=' + n + ')';
+        }
+        return txt;
+      }}},
       datalabels:{display:false},
     },
     scales:{
@@ -4559,11 +4608,11 @@ function buildDiaTrayCurso(curso, students) {
   });
 
   // Gráfico agregado: promedio de curso + una línea por estudiante (oculta por defecto)
-  const _mkAggChart = (id, lbls, avgData, perStFn) => {
+  const _mkAggChart = (id, lbls, avgData, nData, perStFn) => {
     const cvs = document.getElementById(id);
     if(!cvs) return;
     const datasets = [
-      { label:'Promedio curso', data:avgData,
+      { label:'Promedio curso', data:avgData, nCounts:nData,
          borderColor:'#1a3a5c', backgroundColor:'rgba(26,58,92,.13)',
          borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.3,
          datalabels:_diaDeltaDatalabelsCfg() },
@@ -4578,14 +4627,15 @@ function buildDiaTrayCurso(curso, students) {
   };
 
   // Gráfico por eje: solo promedio de curso (no hay desglose por eje a nivel
-  // de estudiante para Diagnóstico Matemática — ver nota más arriba)
-  const _mkEjeChart = (id, lbls, data) => {
+  // de estudiante para Diagnóstico Matemática — ver nota más arriba). `pts` es
+  // un arreglo de {val, n} (salida de _ejeCursoAvg).
+  const _mkEjeChart = (id, lbls, pts) => {
     const cvs = document.getElementById(id);
     if(!cvs) return;
     const ch = new Chart(cvs, {
       type:'line',
       data:{ labels:lbls, datasets:[{
-        label:'Promedio curso', data,
+        label:'Promedio curso', data:pts.map(p=>p.val), nCounts:pts.map(p=>p.n),
         borderColor:'#1a3a5c', backgroundColor:'rgba(26,58,92,.13)',
         borderWidth:2.5, pointRadius:4, pointHoverRadius:6, tension:.3,
         datalabels:_diaDeltaDatalabelsCfg(),
@@ -4596,10 +4646,10 @@ function buildDiaTrayCurso(curso, students) {
   };
 
   const lbls = diaPts.map(p=>p.label);
-  _mkAggChart('dtray-agg-lec', lbls, diaLAvg, s => diaPts.map(p => _diaAvg(s.dia[p.yr]?.[p.pkey]?.lectura)));
-  _mkAggChart('dtray-agg-mat', lbls, diaMAvg, s => diaPts.map(p => _diaAvg(s.dia[p.yr]?.[p.pkey]?.matematica)));
-  ejesLec.forEach(e => _mkEjeChart('dtray-eje-lec-'+_slug(e), lbls, diaPts.map(p => _ejeCursoAvg('lectura', e, p))));
-  ejesMat.forEach(e => _mkEjeChart('dtray-eje-mat-'+_slug(e), lbls, diaPts.map(p => _ejeCursoAvg('matematica', e, p))));
+  _mkAggChart('dtray-agg-lec', lbls, diaLAvg, diaLN, s => diaPts.map(p => _diaAvg(s.dia[p.yr]?.[p.pkey]?.lectura)));
+  _mkAggChart('dtray-agg-mat', lbls, diaMAvg, diaMN, s => diaPts.map(p => _diaAvg(s.dia[p.yr]?.[p.pkey]?.matematica)));
+  ejesLec.forEach(([k]) => _mkEjeChart('dtray-eje-lec-'+_slug(k), lbls, diaPts.map(p => _ejeCursoAvg('lectura', k, p))));
+  ejesMat.forEach(([k]) => _mkEjeChart('dtray-eje-mat-'+_slug(k), lbls, diaPts.map(p => _ejeCursoAvg('matematica', k, p))));
 }
 
 // ── DIA Sub: Análisis transversal ────────────────────────────
