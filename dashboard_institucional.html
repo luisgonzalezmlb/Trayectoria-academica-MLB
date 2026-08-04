@@ -534,7 +534,10 @@ function _paesTrayYearAverages() {
   const yrs = Object.keys(PAES_ANT).sort((a,b) => a-b);
   const out = {};
   yrs.forEach(yr => {
-    const recs = (PAES_ANT[yr] && PAES_ANT[yr].records) || [];
+    // Solo egresados del establecimiento (situacion===1): el reproceso son
+    // estudiantes de generaciones anteriores rindiendo de nuevo, no reflejan
+    // el desempeño de la generación que egresa en ese proceso de admisión.
+    const recs = ((PAES_ANT[yr] && PAES_ANT[yr].records) || []).filter(r => r.situacion === 1);
     out[yr] = {};
     _PAES_TEST_META.forEach(([k]) => {
       const vals = recs.map(r => r[k]).filter(v => v != null);
@@ -578,7 +581,7 @@ function renderPaesTrayEvoCard() {
     <div class="card mb24">
       <div class="card-title">Evolución del promedio de puntajes</div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:14px">
-        Promedio de puntajes PAES de los estudiantes identificados del establecimiento en cada proceso de admisión.</p>
+        Promedio de puntajes PAES de los egresados del establecimiento en cada proceso de admisión (no incluye reproceso).</p>
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
         <button class="filter-btn active" id="paes-tray-btn-general" onclick="_setPaesTrayMode('general')">Promedio general</button>
         <button class="filter-btn" id="paes-tray-btn-prueba" onclick="_setPaesTrayMode('porPrueba')">Por prueba</button>
@@ -4576,9 +4579,14 @@ function buildDiaTrayCurso(curso, students) {
   // Ese promedio ya viene calculado sobre el curso completo que rindió el DIA ese
   // año (no solo los que coinciden con la matrícula actual) — no aplica el umbral
   // de representatividad ni tiene un n por-estudiante disponible aquí.
+  // OJO: read_dia_articulacion() solo lee 'DIA Diagnóstico {CUR_YEAR}' — este
+  // regroup por_eje SOLO es válido para el Diagnóstico del año actual; años
+  // anteriores (2023, 2025, ...) deben calcularse desde s.dia como cualquier
+  // otro punto, si no, el promedio del año actual se filtraría a todo el pasado.
   const oaCursoMat = (DIA_MAT || []).find(d => d.short === curso.grade_name);
   const diagMatEjes = (oaCursoMat && oaCursoMat.por_eje && Object.keys(oaCursoMat.por_eje).length)
     ? oaCursoMat.por_eje : null;
+  const _isDiagMatOverride = p => p.yr === CUR_YEAR && p.pkey === 'diagnostico' && diagMatEjes;
 
   // Los nombres de eje pueden llegar con variantes de acentuación/espacios entre
   // años y fuentes (Excel/PDF); se normalizan a una clave común para no separar
@@ -4588,7 +4596,7 @@ function buildDiaTrayCurso(curso, students) {
   const _ejesFor = materia => {
     const map = new Map(); // normKey -> etiqueta a mostrar (primera variante vista)
     diaPts.forEach(p => {
-      if(materia === 'matematica' && p.pkey === 'diagnostico' && diagMatEjes) {
+      if(materia === 'matematica' && _isDiagMatOverride(p)) {
         Object.keys(diagMatEjes).forEach(e => { const k=_normEje(e); if(!map.has(k)) map.set(k,e); });
         return;
       }
@@ -4606,7 +4614,7 @@ function buildDiaTrayCurso(curso, students) {
   // queda bajo el umbral de representatividad (excepto el caso Diagnóstico
   // Matemática, ver nota arriba, donde n queda como null — curso completo).
   const _ejeCursoAvg = (materia, normKey, p) => {
-    if(materia === 'matematica' && p.pkey === 'diagnostico' && diagMatEjes) {
+    if(materia === 'matematica' && _isDiagMatOverride(p)) {
       const match = Object.keys(diagMatEjes).find(e => _normEje(e) === normKey);
       return { val: match ? diagMatEjes[match] : null, n: null };
     }
