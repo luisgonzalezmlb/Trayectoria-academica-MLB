@@ -325,7 +325,6 @@
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
     <button class="filter-btn active" id="btn-med-evst"     onclick="switchMedTab('evst')">Evaluaciones estandarizadas</button>
     <button class="filter-btn"        id="btn-med-avance"   onclick="switchMedTab('avance')">Medición de avance</button>
-    <button class="filter-btn"        id="btn-med-paes-ant" onclick="switchMedTab('paes-ant')">Resultados PAES anteriores</button>
   </div>
 
   <!-- Sub-tab: Evaluaciones estandarizadas (DIA / SEPA / PAES) -->
@@ -356,15 +355,6 @@
       </div>
       <div id="medicion-content"></div>
     </div>
-  </div>
-
-  <!-- Sub-tab: Resultados PAES anteriores -->
-  <div id="tab-med-paes-ant" style="display:none">
-    <div style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-      <span style="font-size:11px;font-family:var(--mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;">Admisión</span>
-      <select class="course-select" id="paes-ant-yr-sel" onchange="renderResultadosAnt()" style="min-width:180px"></select>
-    </div>
-    <div id="paes-ant-content"></div>
   </div>
 </div>
 
@@ -492,14 +482,13 @@ function goToSeguimiento() {
   showTab('seguimiento', document.querySelector('nav button:nth-child(5)'));
 }
 function switchMedTab(tab) {
-  ['evst','avance','paes-ant'].forEach(t => {
+  ['evst','avance'].forEach(t => {
     document.getElementById('tab-med-'+t).style.display = t===tab ? '' : 'none';
     const btn = document.getElementById('btn-med-'+t);
     if(btn) btn.classList.toggle('active', t===tab);
   });
   if(tab==='evst'     && !window._evstInit)    { switchEvstTab('dia'); window._evstInit=true; }
   if(tab==='avance'   && !window._medicionInit) { initMedicion(); window._medicionInit=true; }
-  if(tab==='paes-ant')                          { initResultadosAnt(); }
 }
 function switchAvanceTab(tab) {
   ['mat'].forEach(t => {
@@ -526,6 +515,148 @@ function initResultadosAnt() {
   });
   if (yrs.length) { sel.value = yrs[0]; renderResultadosAnt(); }
   else document.getElementById('paes-ant-content').innerHTML = '<p class="no-data">Sin datos disponibles.</p>';
+  renderPaesTrayEvoCard();
+}
+
+// ── Trayectoria PAES: evolución del promedio de puntajes entre procesos ──
+const _PAES_TEST_META = [
+  ['clec',  'Competencia Lectora',      '#1a5276'],
+  ['mate1', 'Matemática 1',             '#c0392b'],
+  ['mate2', 'Matemática 2',             '#1e8449'],
+  ['hcsoc', 'Historia y Cs. Sociales',  '#b7770d'],
+  ['cien',  'Ciencias',                 '#6c3483'],
+];
+let _paesTrayMode = 'general'; // 'general' | 'porPrueba'
+let _paesTrayShowDeltas = false;
+let _paesTrayChart = null;
+
+function _paesTrayYearAverages() {
+  const yrs = Object.keys(PAES_ANT).sort((a,b) => a-b);
+  const out = {};
+  yrs.forEach(yr => {
+    const recs = (PAES_ANT[yr] && PAES_ANT[yr].records) || [];
+    out[yr] = {};
+    _PAES_TEST_META.forEach(([k]) => {
+      const vals = recs.map(r => r[k]).filter(v => v != null);
+      out[yr][k] = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
+    });
+  });
+  return { yrs, out };
+}
+
+// Datalabels: anota la diferencia numérica entre procesos consecutivos sobre
+// cada línea, activable con el botón "Diferencias" (mismo patrón que la
+// Trayectoria DIA, ver _diaDeltaDatalabelsCfg).
+function _paesDeltaDatalabelsCfg() {
+  return {
+    display: ctx => {
+      if (!_paesTrayShowDeltas) return false;
+      const data = ctx.dataset.data, i = ctx.dataIndex;
+      return i > 0 && data[i] != null && data[i-1] != null;
+    },
+    formatter: (v, ctx) => {
+      const prev = ctx.dataset.data[ctx.dataIndex-1];
+      const d = Math.round(v - prev);
+      return (d > 0 ? '+' : '') + d;
+    },
+    color: ctx => {
+      const prev = ctx.dataset.data[ctx.dataIndex-1];
+      const d = ctx.raw - prev;
+      return d < 0 ? '#c0392b' : d > 0 ? '#1e8449' : '#7a7a7a';
+    },
+    align:'top', anchor:'end', offset:6,
+    font:{ family:'IBM Plex Mono', size:9, weight:'600' },
+    backgroundColor:'rgba(255,255,255,.82)', borderRadius:3,
+    padding:{top:1,bottom:1,left:3,right:3},
+  };
+}
+
+function renderPaesTrayEvoCard() {
+  const box = document.getElementById('paes-tray-evo-card');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="card mb24">
+      <div class="card-title">Evolución del promedio de puntajes</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">
+        Promedio de puntajes PAES de los estudiantes identificados del establecimiento en cada proceso de admisión.</p>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <button class="filter-btn active" id="paes-tray-btn-general" onclick="_setPaesTrayMode('general')">Promedio general</button>
+        <button class="filter-btn" id="paes-tray-btn-prueba" onclick="_setPaesTrayMode('porPrueba')">Por prueba</button>
+        <button class="dia-toggle" id="paes-tray-btn-diff" style="font-size:10px;padding:3px 10px" onclick="_togglePaesTrayDeltas()">Diferencias</button>
+      </div>
+      <div id="paes-tray-chart-wrap"></div>
+    </div>`;
+  buildPaesTrayChart();
+}
+
+function _setPaesTrayMode(mode) {
+  _paesTrayMode = mode;
+  const bg = document.getElementById('paes-tray-btn-general');
+  const bp = document.getElementById('paes-tray-btn-prueba');
+  if (bg) bg.classList.toggle('active', mode === 'general');
+  if (bp) bp.classList.toggle('active', mode === 'porPrueba');
+  buildPaesTrayChart();
+}
+
+function _togglePaesTrayDeltas() {
+  _paesTrayShowDeltas = !_paesTrayShowDeltas;
+  const b = document.getElementById('paes-tray-btn-diff');
+  if (b) b.classList.toggle('active', _paesTrayShowDeltas);
+  if (_paesTrayChart) _paesTrayChart.update();
+}
+
+function buildPaesTrayChart() {
+  const wrap = document.getElementById('paes-tray-chart-wrap');
+  if (!wrap) return;
+  const { yrs, out } = _paesTrayYearAverages();
+  if (!yrs.length) { wrap.innerHTML = '<p class="no-data">Sin datos disponibles.</p>'; return; }
+
+  const labels = yrs.map(y => `Admisión ${y}`);
+  const activeTests = _PAES_TEST_META.filter(([k]) => yrs.some(y => out[y][k] != null));
+
+  let datasets;
+  if (_paesTrayMode === 'general') {
+    const data = yrs.map(y => {
+      const cl = out[y].clec, m1 = out[y].mate1;
+      return (cl != null && m1 != null) ? Math.round((cl+m1)/2) : (cl ?? m1 ?? null);
+    });
+    datasets = [{
+      label:'Promedio general (CL + M1)', data,
+      borderColor:'#1a3a5c', backgroundColor:'rgba(26,58,92,.13)',
+      borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.3,
+      datalabels:_paesDeltaDatalabelsCfg(),
+    }];
+  } else {
+    datasets = activeTests.map(([k,label,color]) => ({
+      label, data: yrs.map(y => out[y][k]),
+      borderColor:color, backgroundColor:color+'22',
+      borderWidth:2, pointRadius:4, pointHoverRadius:6, tension:.3,
+      datalabels:_paesDeltaDatalabelsCfg(),
+    }));
+  }
+
+  wrap.innerHTML = '<div style="position:relative;height:260px"><canvas id="paes-tray-canvas"></canvas></div>';
+  if (_paesTrayChart) { _paesTrayChart.destroy(); _paesTrayChart = null; }
+  _paesTrayChart = new Chart(document.getElementById('paes-tray-canvas'), {
+    type:'line',
+    data:{ labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{ display:_paesTrayMode==='porPrueba', position:'bottom',
+                  labels:{color:'#5a7a96',font:{size:10,family:'IBM Plex Mono'}} },
+        tooltip:{callbacks:{label:ctx => ctx.raw==null ? ctx.dataset.label+': sin dato' : ctx.dataset.label+': '+ctx.raw}},
+        datalabels:{display:false},
+      },
+      scales:{
+        x:{grid:{color:'rgba(184,208,232,.5)'},ticks:{color:'#5a7a96',font:{size:9,family:'IBM Plex Mono'}}},
+        y:{min:150,max:1000,grid:{color:'rgba(184,208,232,.5)'},
+           ticks:{color:'#5a7a96',font:{size:10,family:'IBM Plex Mono'}}},
+      },
+    },
+    plugins:[ChartDataLabels],
+  });
 }
 
 function _pctClass(p) {
@@ -3998,7 +4129,7 @@ function switchEvstTab(tab) {
   });
   if(tab === 'dia'  && !window._evstDiaDone)  { renderEvstDia();  window._evstDiaDone  = true; }
   if(tab === 'sepa' && !window._evstSepaDone) { renderEvstSepa(); window._evstSepaDone = true; }
-  if(tab === 'paes' && !window._evstPaesDone) { renderEvstPaes(); window._evstPaesDone = true; }
+  if(tab === 'paes' && !window._evstPaesDone) { renderEvstPaesTabs(); window._evstPaesDone = true; }
 }
 
 // ── DIA ────────────────────────────────────────────────────
@@ -5288,8 +5419,40 @@ function _sepaEstudiantesHtml(gradeName) {
 }
 
 // ── PAES ───────────────────────────────────────────────────
-function renderEvstPaes() {
+// Sub-pestañas: año actual (ensayos JEG PDV) y Trayectoria (resultados
+// oficiales PAES/DEMRE de procesos de admisión anteriores).
+function renderEvstPaesTabs() {
   const container = document.getElementById('tab-evst-paes');
+  container.innerHTML = `
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+      <button class="filter-btn active" id="paes-sub-btn-cur" onclick="switchPaesSub('cur')">${CUR_YEAR}</button>
+      <button class="filter-btn" id="paes-sub-btn-tray" onclick="switchPaesSub('tray')">Trayectoria</button>
+    </div>
+    <div id="paes-sub-cur"></div>
+    <div id="paes-sub-tray" style="display:none">
+      <div style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-family:var(--mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;">Admisión</span>
+        <select class="course-select" id="paes-ant-yr-sel" onchange="renderResultadosAnt()" style="min-width:180px"></select>
+      </div>
+      <div id="paes-tray-evo-card"></div>
+      <div id="paes-ant-content"></div>
+    </div>`;
+  switchPaesSub('cur');
+}
+
+function switchPaesSub(tab) {
+  ['cur','tray'].forEach(t => {
+    const el  = document.getElementById('paes-sub-' + t);
+    const btn = document.getElementById('paes-sub-btn-' + t);
+    if(el)  el.style.display = t === tab ? '' : 'none';
+    if(btn) btn.classList.toggle('active', t === tab);
+  });
+  if(tab === 'cur'  && !window._paesCurDone)  { renderEvstPaes();    window._paesCurDone  = true; }
+  if(tab === 'tray' && !window._paesTrayDone) { initResultadosAnt(); window._paesTrayDone = true; }
+}
+
+function renderEvstPaes() {
+  const container = document.getElementById('paes-sub-cur');
 
   // Agrupar por gen
   const jegByGen = {};
