@@ -1212,30 +1212,43 @@ function buildColTrayCard() {
   const hasSepaL = sLKeys.length > 0;
   const hasSepaG = sGKeys.length > 0;
 
-  // ── MEDICIÓN DE AVANCE MATEMÁTICA: índice de ejes y habilidades (última medición) ───────
-  const _maEjIdx = {}, _maHabIdx = {};
-  let _maMedNombre = '';
-  if(Object.keys(MA).length) {
-    const _asig0 = Object.keys(MA)[0];
-    const _meds0 = MA[_asig0] || [];
-    const _last0 = _meds0[_meds0.length-1];
-    if(_last0) {
-      _maMedNombre = _last0.nombre;
-      _last0.cursos.forEach(mc => {
-        (mc.ejes||[]).forEach(e => {
-          if(!_maEjIdx[e.nombre]) _maEjIdx[e.nombre] = [];
-          _maEjIdx[e.nombre].push({gen:mc.gen, pct:e.prom_pct});
-        });
-        (mc.habilidades||[]).forEach(h => {
-          if(!_maHabIdx[h.nombre]) _maHabIdx[h.nombre] = [];
-          _maHabIdx[h.nombre].push({gen:mc.gen, pct:h.prom_pct});
+  // ── MEDICIÓN DE AVANCE MATEMÁTICA: trayectoria por eje/habilidad (seleccionable) ───────
+  // Cada eje/habilidad tiene su propio nivel base y evolución, por lo que no son
+  // comparables entre sí en un mismo punto del tiempo. En vez de graficar todos los
+  // ejes/habilidades de la última medición uno al lado del otro, se arma una serie
+  // temporal (una por medición) para cada eje y cada habilidad, y se deja elegir
+  // cuál mostrar.
+  const _maAsig0 = Object.keys(MA)[0] || null;
+  const _maMeds  = _maAsig0 ? (MA[_maAsig0] || []) : [];
+  const _maLbls  = _maMeds.map(m => `${m.nombre} · ${m.año}`);
+
+  const _maBuildIdx = key => {
+    const idx = {};
+    _maMeds.forEach((m, mi) => {
+      const perName = {};
+      (m.cursos||[]).forEach(mc => {
+        (mc[key]||[]).forEach(e => {
+          if(!perName[e.nombre]) perName[e.nombre] = {sum:0,n:0,byGen:{}};
+          perName[e.nombre].sum += e.prom_pct;
+          perName[e.nombre].n++;
+          perName[e.nombre].byGen[mc.gen] = e.prom_pct;
         });
       });
-    }
-  }
-  const _maAvgArr = arr => arr.reduce((s,x)=>s+x.pct,0)/arr.length;
-  const _maEjNames  = Object.keys(_maEjIdx).sort((a,b)=>_maAvgArr(_maEjIdx[a])-_maAvgArr(_maEjIdx[b]));
-  const _maHabNames = Object.keys(_maHabIdx).sort((a,b)=>_maAvgArr(_maHabIdx[a])-_maAvgArr(_maHabIdx[b]));
+      Object.keys(perName).forEach(nombre => {
+        if(!idx[nombre]) idx[nombre] = new Array(_maMeds.length).fill(null);
+        idx[nombre][mi] = { avg:+(perName[nombre].sum/perName[nombre].n).toFixed(1), byGen:perName[nombre].byGen };
+      });
+    });
+    return idx;
+  };
+  const _maEjIdx  = _maBuildIdx('ejes');
+  const _maHabIdx = _maBuildIdx('habilidades');
+  const _maOverallAvg = (idx,nombre) => {
+    const pts = idx[nombre].filter(p=>p).map(p=>p.avg);
+    return pts.reduce((a,b)=>a+b,0)/pts.length;
+  };
+  const _maEjNames  = Object.keys(_maEjIdx).sort((a,b)=>_maOverallAvg(_maEjIdx,a)-_maOverallAvg(_maEjIdx,b));
+  const _maHabNames = Object.keys(_maHabIdx).sort((a,b)=>_maOverallAvg(_maHabIdx,a)-_maOverallAvg(_maHabIdx,b));
   const hasMAcol = _maEjNames.length > 0 || _maHabNames.length > 0;
 
   if(!hasDia && !hasSepaL && !hasSepaG && !hasMAcol) return;
@@ -1294,6 +1307,13 @@ function buildColTrayCard() {
     'text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">' + t + '</div>' +
     '<div style="position:relative;height:220px"><canvas id="' + id + '"></canvas></div></div>';
 
+  const _subSel = (id, selId) =>
+    '<div>' +
+    '<select id="' + selId + '" style="font-size:10px;font-family:var(--mono);' +
+    'background:var(--bg);color:var(--text);border:1px solid var(--border);' +
+    'border-radius:4px;padding:2px 6px;margin-bottom:6px;max-width:100%"></select>' +
+    '<div style="position:relative;height:220px"><canvas id="' + id + '"></canvas></div></div>';
+
   let chartsHtml = '';
   if(hasDia) chartsHtml +=
     '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
@@ -1308,10 +1328,10 @@ function buildColTrayCard() {
     (hasSepaG ? _sub('Matemática','chart-col-smat') : '<div></div>') + '</div>';
   if(hasMAcol) chartsHtml +=
     '<div style="font-size:11px;font-family:var(--mono);color:var(--muted);' +
-    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">MEDICIÓN MATEMÁTICA · ' + _maMedNombre + '</div>' +
+    'text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">MEDICIÓN MATEMÁTICA · ' + _maAsig0 + '</div>' +
     '<div class="g2">' +
-    (_maEjNames.length ? _sub('Por eje','chart-col-maej') : '<div></div>') +
-    (_maHabNames.length ? _sub('Por habilidad','chart-col-mahab') : '<div></div>') + '</div>';
+    (_maEjNames.length ? _subSel('chart-col-maej','ma-ej-sel') : '<div></div>') +
+    (_maHabNames.length ? _subSel('chart-col-mahab','ma-hab-sel') : '<div></div>') + '</div>';
 
   const _maTitle = hasMAcol ? ' · Medición matemática' : '';
   container.innerHTML =
@@ -1326,6 +1346,7 @@ function buildColTrayCard() {
 
   // ── Chips por curso ───────────────────────────────────────
   const colCharts = [];
+  const chipEls = [];
   const selEl = document.getElementById('col-ssel');
   CURSOS.forEach((c, i) => {
     const color = _CPAL[i % _CPAL.length];
@@ -1345,6 +1366,7 @@ function buildColTrayCard() {
       });
     };
     selEl.appendChild(chip);
+    chipEls.push(chip);
   });
 
   // ── Factory de gráfico ────────────────────────────────────
@@ -1377,6 +1399,22 @@ function buildColTrayCard() {
     ];
     const ch = new Chart(cvs, {type:'line', data:{labels:lbls, datasets}, options:opts});
     colCharts.push(ch);
+    return ch;
+  };
+
+  // Destruye el gráfico actual de un canvas (si existe) y lo reconstruye,
+  // preservando el estado de los chips de curso activos.
+  const _replaceChart = (id, mkFn) => {
+    const idx = colCharts.findIndex(ch => ch.canvas.id === id);
+    if(idx !== -1) { colCharts[idx].destroy(); colCharts.splice(idx,1); }
+    const ch = mkFn();
+    if(ch) {
+      chipEls.forEach((chip,i) => {
+        const ds = ch.data.datasets[i+1];
+        if(ds) ds.hidden = !chip.classList.contains('active');
+      });
+      ch.update();
+    }
   };
 
   const diaOpts  = _mkOpts(0,100,20,'%');
@@ -1390,30 +1428,42 @@ function buildColTrayCard() {
   }
   if(hasSepaL) _mkChart('chart-col-sleng', sLLbls, schSL, c=>cSL[c.gen], sepaOpts);
   if(hasSepaG) _mkChart('chart-col-smat',  sGLbls, schSG, c=>cSG[c.gen], sepaOpts);
+  // Trayectoria en el tiempo de UN eje / UNA habilidad a la vez (elegido por el
+  // selector), ya que cada uno tiene su propio nivel base y no son comparables
+  // entre sí en un mismo gráfico.
+  const _maRenderChart = (id, selId, idx) => {
+    const sel = document.getElementById(selId);
+    if(!sel) return;
+    const nombre = sel.value;
+    const series = idx[nombre] || [];
+    const schData = series.map(p => p ? p.avg : null);
+    _replaceChart(id, () => _mkChart(id, _maLbls, schData, c => {
+      return series.map(p => (p && p.byGen[c.gen] != null) ? +(+p.byGen[c.gen]).toFixed(1) : null);
+    }, maOpts));
+  };
+
   if(hasMAcol) {
     if(_maEjNames.length) {
-      const schMaEj = _maEjNames.map(ej => {
-        const vs = _maEjIdx[ej];
-        return +(vs.reduce((s,x)=>s+x.pct,0)/vs.length).toFixed(1);
+      const sel = document.getElementById('ma-ej-sel');
+      _maEjNames.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        sel.appendChild(opt);
       });
-      _mkChart('chart-col-maej', _maEjNames, schMaEj, c => {
-        return _maEjNames.map(ej => {
-          const entry = (_maEjIdx[ej]||[]).find(x=>x.gen===c.gen);
-          return entry ? +entry.pct.toFixed(1) : null;
-        });
-      }, maOpts);
+      sel.value = _maEjNames[0];
+      sel.addEventListener('change', () => _maRenderChart('chart-col-maej','ma-ej-sel',_maEjIdx));
+      _maRenderChart('chart-col-maej','ma-ej-sel',_maEjIdx);
     }
     if(_maHabNames.length) {
-      const schMaHab = _maHabNames.map(h => {
-        const vs = _maHabIdx[h];
-        return +(vs.reduce((s,x)=>s+x.pct,0)/vs.length).toFixed(1);
+      const sel = document.getElementById('ma-hab-sel');
+      _maHabNames.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        sel.appendChild(opt);
       });
-      _mkChart('chart-col-mahab', _maHabNames, schMaHab, c => {
-        return _maHabNames.map(h => {
-          const entry = (_maHabIdx[h]||[]).find(x=>x.gen===c.gen);
-          return entry ? +entry.pct.toFixed(1) : null;
-        });
-      }, maOpts);
+      sel.value = _maHabNames[0];
+      sel.addEventListener('change', () => _maRenderChart('chart-col-mahab','ma-hab-sel',_maHabIdx));
+      _maRenderChart('chart-col-mahab','ma-hab-sel',_maHabIdx);
     }
   }
 }
@@ -5926,7 +5976,7 @@ function renderMedicionAvance() {
       const ch = new Chart(evolCtx, {
         type: 'line',
         data: {
-          labels: _allMeds.map(m => m.nombre),
+          labels: _allMeds.map(m => `${m.nombre} · ${m.año}`),
           datasets: _evolGrades.map((gn,i) => ({
             label: gn,
             data: _allMeds.map(m => {
