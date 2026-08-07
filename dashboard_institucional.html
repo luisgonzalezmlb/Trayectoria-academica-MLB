@@ -4986,100 +4986,257 @@ function _sepaOaRow(o) {
 }
 
 // ── SEPA sub: Trayectoria ─────────────────────────────────────
+// Mismo patrón que Trayectoria DIA (renderDiaTrayTab / _diaTrayOpenCurso / buildDiaTrayCurso):
+// tabla de cursos clicable → drill-down con gráfico de curso + chips para superponer
+// la trayectoria de cada estudiante + botón "Diferencias" con anotaciones de delta.
 function renderSepaEstado() {
   const container = document.getElementById('sepa-sub-estado');
 
-  const sepaByGen = {};
-  EST.forEach(s => {
-    if(!s.sepa || s.retirado) return;
-    const hasL = Object.keys(s.sepa.lenguaje   ?? {}).some(k=>parseInt(k)>=2022);
-    const hasM = Object.keys(s.sepa.matematica ?? {}).some(k=>parseInt(k)>=2022);
-    if(!hasL && !hasM) return;
-    if(!sepaByGen[s.gen]) sepaByGen[s.gen] = { lenguaje: {}, matematica: {}, n: 0 };
-    sepaByGen[s.gen].n++;
-    ['lenguaje','matematica'].forEach(mat => {
-      Object.entries(s.sepa[mat] ?? {}).filter(([k])=>parseInt(k)>=2022).forEach(([k, v]) => {
-        if(!sepaByGen[s.gen][mat][k]) sepaByGen[s.gen][mat][k] = [];
-        sepaByGen[s.gen][mat][k].push(v);
-      });
-    });
-  });
-
-  const cursosConSepa = CURSOS.filter(c => sepaByGen[c.gen]);
-  if(!cursosConSepa.length) {
+  const _cursoTieneSepaHistorico = gen => EST.some(s =>
+    s.gen === gen && s.napsis[CUR_YEAR] && !s.retirado &&
+    (Object.keys(s.sepa.lenguaje   ?? {}).some(k=>parseInt(k)>=2022) ||
+     Object.keys(s.sepa.matematica ?? {}).some(k=>parseInt(k)>=2022)));
+  const cursosSepa = CURSOS.filter(c => _cursoTieneSepaHistorico(c.gen));
+  if(!cursosSepa.length) {
     container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos SEPA de trayectoria disponibles.</p>';
     return;
   }
 
-  function avgList(arr) { return arr.reduce((a,b) => a+b, 0) / arr.length; }
-  function sepaSort(entries) {
-    return entries.sort((a,b) => {
-      const ka = a[0].replace(/_P$/, '_0').replace(/_F$/, '_1');
-      const kb = b[0].replace(/_P$/, '_0').replace(/_F$/, '_1');
-      return ka.localeCompare(kb);
-    });
+  const rows = CURSOS.map(c => {
+    const clickable = cursosSepa.some(cd => cd.gen === c.gen);
+    return `<tr${clickable ? ` style="cursor:pointer" onclick="_sepaTrayOpenCurso(${c.gen})"` : ''}>
+      <td><strong style="color:var(--accent)">${c.grade_name}</strong></td>
+      <td style="color:var(--muted);font-size:11px">${clickable ? 'Ver trayectoria →' : 'Sin datos SEPA'}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="card mb24">
+      <div class="card-title">SEPA · Trayectoria por Curso</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">
+        Evolución del puntaje SEPA de cada curso a través de los años disponibles (desde 2022),
+        siguiendo a la misma cohorte de estudiantes.</p>
+      <div style="overflow-x:auto"><table class="summary-table">
+        <thead><tr><th style="text-align:left">Curso</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div id="sepa-tray-panel"></div>
+    </div>`;
+}
+
+// Drill-down: panel de trayectoria de un curso (toggle, mismo patrón que _diaTrayOpenCurso)
+function _sepaTrayOpenCurso(gen) {
+  const panel = document.getElementById('sepa-tray-panel');
+  if(!panel) return;
+  if(panel.dataset.gen === String(gen)) {
+    panel.innerHTML = '';
+    panel.dataset.gen = '';
+    return;
   }
-  function sepaLabel(k) {
-    const parts = k.split('_');
-    const sfx = parts.pop();
-    return `${parts.join('_')} (${sfx === 'P' ? 'inicio' : 'fin'})`;
-  }
+  panel.dataset.gen = String(gen);
 
-  let html = '';
-  cursosConSepa.forEach(c => {
-    const d    = sepaByGen[c.gen];
-    const hasL = Object.keys(d.lenguaje).length   > 0;
-    const hasM = Object.keys(d.matematica).length > 0;
-    html += `
-      <div class="card mb24">
-        <div class="card-title">SEPA · ${c.grade_name}
-          <span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:8px">N = ${d.n} estudiantes con datos</span>
-        </div>
-        <div class="g2">
-          ${hasL ? `<div>
-            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Lenguaje</div>
-            <div style="height:180px"><canvas id="evst-sepa-leng-${c.gen}"></canvas></div>
-          </div>` : '<div></div>'}
-          ${hasM ? `<div>
-            <div style="font-size:10px;font-family:var(--mono);color:var(--muted);
-              text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Matemática</div>
-            <div style="height:180px"><canvas id="evst-sepa-mat-${c.gen}"></canvas></div>
-          </div>` : '<div></div>'}
-        </div>
-      </div>`;
-  });
+  const c = CURSOS.find(c => c.gen === gen);
+  if(!c) { panel.innerHTML = ''; return; }
+  const students = EST.filter(s => s.gen === gen && s.napsis[CUR_YEAR] && !s.retirado);
 
-  container.innerHTML = html;
+  panel.innerHTML = `<div style="margin-top:12px" id="sepa-tray-panel-charts"></div>`;
+  buildSepaTrayCurso(c, students);
+}
 
-  const sepaChartOpts = {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { ticks: { color:'#5a7a96', font:{ family:'IBM Plex Mono', size:9 }, maxRotation:30 },
-             grid: { color:'rgba(184,208,232,.4)' } },
-      y: { min: 450, max: 850,
-             ticks: { color:'#5a7a96', font:{ family:'IBM Plex Mono', size:9 } },
-             grid: { color:'rgba(184,208,232,.4)' } },
+let _sepaTrayCharts = [];
+let _sepaTrayShowDeltas = false;
+
+// Config de chartjs-plugin-datalabels para anotar la diferencia numérica entre
+// mediciones consecutivas sobre cada curva, activable con "Diferencias"
+// (mismo patrón que _diaDeltaDatalabelsCfg, con estado propio).
+function _sepaDeltaDatalabelsCfg() {
+  return {
+    display: ctx => {
+      if(!_sepaTrayShowDeltas) return false;
+      const data = ctx.dataset.data, i = ctx.dataIndex;
+      return i > 0 && data[i] != null && data[i-1] != null;
     },
+    formatter: (v, ctx) => {
+      const prev = ctx.dataset.data[ctx.dataIndex-1];
+      const d = Math.round(v - prev);
+      return (d > 0 ? '+' : '') + d;
+    },
+    color: ctx => {
+      const prev = ctx.dataset.data[ctx.dataIndex-1];
+      const d = ctx.raw - prev;
+      return d < 0 ? '#c0392b' : d > 0 ? '#1e8449' : '#7a7a7a';
+    },
+    align:'top', anchor:'end', offset:6,
+    font:{ family:'IBM Plex Mono', size:9, weight:'600' },
+    backgroundColor:'rgba(255,255,255,.82)', borderRadius:3,
+    padding:{top:1,bottom:1,left:3,right:3},
+  };
+}
+
+function buildSepaTrayCurso(curso, students) {
+  _sepaTrayCharts.forEach(ch => ch.destroy());
+  _sepaTrayCharts = [];
+  _sepaTrayShowDeltas = false;
+
+  const container = document.getElementById('sepa-tray-panel-charts');
+  if(!container) return;
+
+  // Un promedio de curso calculado con muy pocos estudiantes no es representativo
+  // (mismo criterio que DIA_TRAY_MIN_N en Trayectoria DIA).
+  const SEPA_TRAY_MIN_N = 5;
+  const _avgN = arr => {
+    const vs = arr.filter(v => v != null);
+    const n = vs.length;
+    return { val: n >= SEPA_TRAY_MIN_N ? Math.round(vs.reduce((a,b)=>a+b,0)/n) : null, n };
   };
 
-  cursosConSepa.forEach(c => {
-    const d = sepaByGen[c.gen];
-    [['leng','lenguaje'],['mat','matematica']].forEach(([sfx, mat]) => {
-      const raw = d[mat];
-      if(!Object.keys(raw).length) return;
-      const sorted = sepaSort(Object.entries(raw));
-      const labels = sorted.map(([k]) => sepaLabel(k));
-      const vals   = sorted.map(([, arr]) => Math.round(avgList(arr)));
-      new Chart(document.getElementById(`evst-sepa-${sfx}-${c.gen}`), {
-        type: 'line',
-        data: { labels, datasets: [{ data: vals, borderColor:'#1a5276',
-          backgroundColor:'#1a527622', borderWidth:2, pointRadius:4, tension:0.3 }] },
-        options: sepaChartOpts,
+  const _sk  = k => k.replace('_P','_0').replace('_F','_1');
+  const _lbl = k => {
+    const parts = k.split('_'); const sfx = parts.pop();
+    return `${parts.join('_')} (${sfx === 'P' ? 'inicio' : 'fin'})`;
+  };
+  const _keysFor = mat => {
+    const set = new Set();
+    students.forEach(s => Object.keys(s.sepa[mat] ?? {}).filter(k=>parseInt(k)>=2022).forEach(k=>set.add(k)));
+    return [...set].sort((a,b)=>_sk(a).localeCompare(_sk(b)));
+  };
+  const lengKeys = _keysFor('lenguaje');
+  const matKeys  = _keysFor('matematica');
+
+  if(!lengKeys.length && !matKeys.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin datos SEPA disponibles para este curso.</p>';
+    return;
+  }
+
+  const lengPts = lengKeys.map(k => _avgN(students.map(s => s.sepa.lenguaje[k]   ?? null)));
+  const matPts  = matKeys.map(k  => _avgN(students.map(s => s.sepa.matematica[k] ?? null)));
+
+  const _PAL = ['#e74c3c','#27ae60','#f39c12','#8e44ad','#2980b9',
+                '#16a085','#d35400','#6c3483','#c0392b','#1abc9c',
+                '#e67e22','#7d6608','#2c3e50','#0e6655','#6e2f1a'];
+
+  const _sub = (t, id) =>
+    '<div><div style="font-size:10px;color:var(--muted);font-family:var(--mono);' +
+    'text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">' + t + '</div>' +
+    '<div style="position:relative;height:200px"><canvas id="' + id + '"></canvas></div></div>';
+
+  container.innerHTML =
+    '<div class="card mb24">' +
+    '<div style="display:flex;align-items:center;margin-bottom:14px">' +
+    '<span class="card-title" style="margin:0">Trayectoria SEPA · ' + curso.grade_name + '</span></div>' +
+    '<div id="stray-ssel" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;align-items:center">' +
+    '<span style="font-size:11px;color:var(--muted);font-family:var(--mono);' +
+    'text-transform:uppercase;letter-spacing:.5px;margin-right:2px">Superponer:</span></div>' +
+    '<div class="g2">' +
+    (lengKeys.length ? _sub('Lenguaje','stray-leng') : '<div></div>') +
+    (matKeys.length  ? _sub('Matemática','stray-mat') : '<div></div>') + '</div></div>';
+
+  // ── Controles: Todas / Ninguna / Diferencias + chips por estudiante ──────
+  const selEl = document.getElementById('stray-ssel');
+  const _setAllStudentsST = show => {
+    selEl.querySelectorAll('.dia-toggle[data-idx]').forEach(chip => {
+      const i = +chip.dataset.idx;
+      const color = _PAL[i % _PAL.length];
+      chip.classList.toggle('active', show);
+      chip.style.cssText = show
+        ? 'font-size:10px;padding:3px 8px;background:'+color+';border-color:'+color+';color:#fff'
+        : 'font-size:10px;padding:3px 8px;border-color:'+color+';color:var(--text)';
+      _sepaTrayCharts.forEach(ch => {
+        const ds = ch.data.datasets[i+1];
+        if(ds) ds.hidden = !show;
       });
     });
+    _sepaTrayCharts.forEach(ch => ch.update());
+  };
+  const _mkCtrlBtnST = (lbl, fn) => {
+    const b = document.createElement('button');
+    b.className = 'dia-toggle';
+    b.style.cssText = 'font-size:10px;padding:3px 10px';
+    b.textContent = lbl;
+    b.onclick = fn;
+    return b;
+  };
+  selEl.appendChild(_mkCtrlBtnST('Todas',   () => _setAllStudentsST(true)));
+  selEl.appendChild(_mkCtrlBtnST('Ninguna', () => _setAllStudentsST(false)));
+  const btnDiff = _mkCtrlBtnST('Diferencias', () => {
+    _sepaTrayShowDeltas = !_sepaTrayShowDeltas;
+    btnDiff.classList.toggle('active', _sepaTrayShowDeltas);
+    _sepaTrayCharts.forEach(ch => ch.update());
   });
+  selEl.appendChild(btnDiff);
+  const _sepST = document.createElement('span');
+  _sepST.style.cssText = 'width:1px;background:var(--border);display:inline-block;margin:0 2px;align-self:stretch';
+  selEl.appendChild(_sepST);
+  students.forEach((s, i) => {
+    const color = _PAL[i % _PAL.length];
+    const pts   = s.nombre.replace(',','').split(/\s+/).filter(Boolean);
+    let lbl = (pts[0]||'') + (pts[1] ? ' '+pts[1] : '');
+    if(lbl.length > 18) lbl = lbl.slice(0,17)+'…';
+    const chip = document.createElement('button');
+    chip.className = 'dia-toggle';
+    chip.textContent = lbl;
+    chip.title = s.nombre;
+    chip.dataset.idx = i;
+    chip.style.cssText = 'font-size:10px;padding:3px 8px;border-color:'+color+';color:var(--text)';
+    chip.onclick = () => {
+      const on = chip.classList.toggle('active');
+      chip.style.cssText = on
+        ? 'font-size:10px;padding:3px 8px;background:'+color+';border-color:'+color+';color:#fff'
+        : 'font-size:10px;padding:3px 8px;border-color:'+color+';color:var(--text)';
+      _sepaTrayCharts.forEach(ch => {
+        const ds = ch.data.datasets[i+1];
+        if(ds) { ds.hidden = !on; ch.update(); }
+      });
+    };
+    selEl.appendChild(chip);
+  });
+
+  // ── Factory de gráfico ────────────────────────────────────
+  const _mkOpts = () => ({
+    responsive:true, maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx => {
+        if(ctx.raw == null) return ctx.dataset.label + ': sin dato';
+        let txt = ctx.dataset.label + ': ' + ctx.raw;
+        const nArr = ctx.dataset.nCounts;
+        if(nArr) txt += ' (n=' + nArr[ctx.dataIndex] + ')';
+        return txt;
+      }}},
+      datalabels:{display:false},
+    },
+    scales:{
+      x:{grid:{color:'rgba(184,208,232,.5)'},ticks:{color:'#5a7a96',font:{size:9,family:'IBM Plex Mono'},maxRotation:30}},
+      y:{min:450,max:850,grid:{color:'rgba(184,208,232,.5)'},
+         ticks:{color:'#5a7a96',font:{size:10,family:'IBM Plex Mono'},stepSize:50}},
+    },
+  });
+
+  // Gráfico: promedio de curso (respeta SEPA_TRAY_MIN_N) + una línea por estudiante
+  // (oculta por defecto), igual patrón que _mkAggChart en Trayectoria DIA.
+  const _mkChart = (id, lbls, pts, perStFn) => {
+    const cvs = document.getElementById(id);
+    if(!cvs) return;
+    const datasets = [
+      { label:'Promedio curso', data:pts.map(p=>p.val), nCounts:pts.map(p=>p.n),
+         borderColor:'#1a3a5c', backgroundColor:'rgba(26,58,92,.13)',
+         borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.3,
+         datalabels:_sepaDeltaDatalabelsCfg() },
+      ...students.map((s,i) => ({
+        label:s.nombre, data:perStFn(s),
+        borderColor:_PAL[i%_PAL.length], backgroundColor:'transparent',
+        borderWidth:1.5, pointRadius:3, tension:.3, hidden:true, borderDash:[5,3],
+        datalabels:_sepaDeltaDatalabelsCfg() })),
+    ];
+    const ch = new Chart(cvs, {type:'line', data:{labels:lbls, datasets}, options:_mkOpts(), plugins:[ChartDataLabels]});
+    _sepaTrayCharts.push(ch);
+  };
+
+  if(lengKeys.length) _mkChart('stray-leng', lengKeys.map(_lbl), lengPts,
+    s => lengKeys.map(k => s.sepa.lenguaje[k] ?? null));
+  if(matKeys.length) _mkChart('stray-mat', matKeys.map(_lbl), matPts,
+    s => matKeys.map(k => s.sepa.matematica[k] ?? null));
 }
 
 // ── SEPA sub: Resultados ──────────────────────────────────────
