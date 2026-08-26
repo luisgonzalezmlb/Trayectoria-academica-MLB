@@ -5685,10 +5685,7 @@ function renderPaesRanking() {
     </tr>`;
   }).join('');
 
-  const sorted = [...R.alumnos].sort((a,b) => {
-    const na = (a.nombre||'').toUpperCase(), nb = (b.nombre||'').toUpperCase();
-    return na < nb ? -1 : na > nb ? 1 : 0;
-  });
+  const sorted = [...R.alumnos].sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'', 'es'));
 
   const rows = sorted.map(a => {
     const nombre = a.key
