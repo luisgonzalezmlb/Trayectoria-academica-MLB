@@ -1717,13 +1717,15 @@ function renderSeguimiento() {
             onclick="setSegFilt('asist',null,this)">Riesgo asistencia (≤ ${SEG_ASIST_UMBRAL}%)</button>
         </div>
 
-        <div style="position:relative;display:flex;gap:4px;align-self:flex-end">
-          <span style="position:absolute;top:-15px;left:0;font-size:10px;font-family:var(--mono);
-            color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap">+Info</span>
-          <button class="filter-btn" id="seg-filt-pie"
-            onclick="setSegFilt('pie',null,this)">PIE</button>
-          ${_segHasAnyExt ? `<button class="filter-btn" id="btn-seg-ext" onclick="setSegExt(this)"
-            title="Agregar columnas DIA, Medición matemática y PAES">Resultados Externos</button>` : ''}
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:10px;font-family:var(--mono);color:var(--muted);
+            text-transform:uppercase;letter-spacing:1px;white-space:nowrap">+Info</span>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="filter-btn" id="seg-filt-pie"
+              onclick="setSegFilt('pie',null,this)">PIE</button>
+            ${_segHasAnyExt ? `<button class="filter-btn" id="btn-seg-ext" onclick="setSegExt(this)"
+              title="Agregar columnas DIA, Medición matemática y PAES">Resultados Externos</button>` : ''}
+          </div>
         </div>
 
         <div style="margin-left:auto;align-self:flex-end">
