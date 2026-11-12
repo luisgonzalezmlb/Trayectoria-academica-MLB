@@ -189,6 +189,13 @@
   color:var(--accent);text-transform:uppercase;letter-spacing:.5px;
   margin-left:5px;vertical-align:middle;
 }
+.asist-badge {
+  display:inline-block;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.35);
+  border-radius:3px;padding:1px 5px;font-size:9px;font-family:var(--mono);
+  color:var(--red);text-transform:uppercase;letter-spacing:.5px;
+  margin-left:5px;vertical-align:middle;
+}
+.risk-card.asistencia { background:rgba(90,110,130,.05);border:1px dashed rgba(90,110,130,.4); }
 </style>
 </head>
 <body>
@@ -197,7 +204,7 @@
   <div class="hdr-left">
     <span class="chip">Liceo Bicentenario María Luisa Bombal</span>
     <h1>Dashboard Institucional · 2026</h1>
-    <span class="hdr-meta">Dashboard generado: 09/11/2026 &nbsp;·&nbsp; Notas NAPSIS 2026: 09/11/2026 09:01</span>
+    <span class="hdr-meta">Dashboard generado: 12/11/2026 &nbsp;·&nbsp; Notas NAPSIS 2026: 09/11/2026 09:01</span>
   </div>
   <div class="hdr-stats" id="hdr-stats"></div>
   <span id="admin-trigger" onclick="_tryAdmin()" title=""
@@ -1453,6 +1460,7 @@ function goToSegDetalleCurso(gen) {
   _segFiltCurso = String(gen);
   _segFiltNota  = 'all';
   _segFiltPie   = false;
+  _segFiltAsist = false;
   _segShowExt   = false;
 
   const cursoSel = document.getElementById('seg-filt-curso');
@@ -1461,6 +1469,7 @@ function goToSegDetalleCurso(gen) {
   document.querySelectorAll('#seg-filt-tipo .filter-btn').forEach((b,i)=>b.classList.toggle('active', i===0));
   document.querySelectorAll('#seg-filt-nota .filter-btn').forEach((b,i)=>b.classList.toggle('active', i===0));
   document.getElementById('seg-filt-pie')?.classList.remove('active');
+  document.getElementById('seg-filt-asist')?.classList.remove('active');
   document.getElementById('btn-seg-ext')?.classList.remove('active');
 
   _applySegFilters();
@@ -1479,13 +1488,16 @@ function _buildSegRiskCard(s, lv) {
   const pieBadge = s.pie?.activo
     ? `<span class="pie-badge">PIE · ${s.pie.diag}</span>`
     : '';
-  return `<div class="risk-card ${lv}">
+  const asistBadge = _segLowAsist(s)
+    ? `<span class="asist-badge" title="Asistencia ≤ ${SEG_ASIST_UMBRAL}%">Asist. ${nd.asistencia}%</span>`
+    : '';
+  return `<div class="risk-card ${lv ?? 'asistencia'}">
     <div>
       <div class="risk-name" style="cursor:pointer" onclick="openStudent('${s.key}')">${s.nombre}</div>
-      <div class="risk-detail"><span class="course-badge">${courseName}</span>${pieBadge}</div>
+      <div class="risk-detail"><span class="course-badge">${courseName}</span>${pieBadge}${asistBadge}</div>
       <div class="risk-tags">${tags||'<span style="font-size:11px;color:var(--muted);font-style:italic">Sin asignaturas críticas</span>'}</div>
     </div>
-    <div class="risk-prom" style="color:${RISK_COLOR[lv]}">${ns(nd.pf)}</div>
+    <div class="risk-prom" style="color:${_segRiskColor(lv)}">${ns(nd.pf)}</div>
   </div>`;
 }
 
@@ -1522,12 +1534,28 @@ let _segFiltTipo  = 'all';
 let _segFiltCurso = 'all';
 let _segFiltNota  = 'all';
 let _segFiltPie   = false;
+let _segFiltAsist = false;
 let _segShowExt   = false;
 
 // Estado de filtros de la sección de tarjetas en vista Resumen
 let _segResumFiltTipo  = 'all';
 let _segResumFiltCurso = 'all';
 let _segResumFiltPie   = false;
+let _segResumFiltAsist = false;
+
+// Riesgo de asistencia: asistencia anual ≤ umbral (incluye estudiantes sin riesgo académico)
+const SEG_ASIST_UMBRAL = 85;
+function _segLowAsist(s) {
+  const a = s.napsis[CUR_YEAR]?.asistencia;
+  return a != null && a <= SEG_ASIST_UMBRAL;
+}
+const _segRiskColor = lv => RISK_COLOR[lv] ?? 'var(--muted)';
+const _segRiskLabel = lv => RISK_LABEL[lv] ?? 'Solo asistencia';
+// Universo a filtrar: en seguimiento académico + (si el filtro de asistencia está activo) quienes solo tienen riesgo de asistencia
+function _segPool(asistOn) {
+  const all = window._segAllStudents ?? [];
+  return asistOn ? all.concat(window._segAsistOnly ?? []) : all;
+}
 
 function renderSeguimiento() {
   const riskGroups = { alerta:[], activo:[], preventivo:[] };
@@ -1542,6 +1570,10 @@ function renderSeguimiento() {
   window._segAllStudents = [];
   ['alerta','activo','preventivo'].forEach(lv => riskGroups[lv].forEach(s => window._segAllStudents.push({s, lv})));
   const _segHasAnyExt = window._segAllStudents.some(({s}) => _segHasExt(s));
+  window._segAsistOnly = EST
+    .filter(s => !s.retirado && s.napsis[CUR_YEAR] && !s.napsis[CUR_YEAR].risk && _segLowAsist(s))
+    .map(s => ({s, lv:null}));
+  const _gensAsist = new Set(window._segAsistOnly.map(({s}) => String(s.gen)));
 
   // KPIs
   document.getElementById('kpi-seg').innerHTML = `
@@ -1551,7 +1583,7 @@ function renderSeguimiento() {
     <div class="kpi"><div class="value ca">${riskGroups.preventivo.length}</div><div class="desc">Seg. preventivo</div></div>`;
 
   // Opciones de curso comunes (reutilizadas en Resumen y Detalle)
-  const cursosConSeg = CURSOS.filter(c => c.alerta + c.activo + c.preventivo > 0);
+  const cursosConSeg = CURSOS.filter(c => c.alerta + c.activo + c.preventivo > 0 || _gensAsist.has(String(c.gen)));
   const cursoOpts = cursosConSeg.map(c =>
     `<option value="${c.gen}">${c.grade_name}</option>`).join('');
 
@@ -1621,6 +1653,13 @@ function renderSeguimiento() {
           <button class="filter-btn" id="seg-resum-filt-pie"
             onclick="setSegResumFilt('pie',null,this)">PIE</button>
         </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:10px;font-family:var(--mono);color:var(--muted);
+            text-transform:uppercase;letter-spacing:1px">Asistencia</span>
+          <button class="filter-btn" id="seg-resum-filt-asist" style="color:var(--red)"
+            title="Asistencia anual ≤ ${SEG_ASIST_UMBRAL}% · incluye estudiantes sin riesgo académico"
+            onclick="setSegResumFilt('asist',null,this)">Riesgo asistencia (≤ ${SEG_ASIST_UMBRAL}%)</button>
+        </div>
         <div style="margin-left:auto;align-self:flex-end">
           <span id="seg-resum-count" style="font-size:11px;font-family:var(--mono);color:var(--muted)"></span>
         </div>
@@ -1670,6 +1709,14 @@ function renderSeguimiento() {
           </div>
         </div>
 
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:10px;font-family:var(--mono);color:var(--muted);
+            text-transform:uppercase;letter-spacing:1px">Asistencia</span>
+          <button class="filter-btn" id="seg-filt-asist" style="color:var(--red)"
+            title="Asistencia anual ≤ ${SEG_ASIST_UMBRAL}% · incluye estudiantes sin riesgo académico"
+            onclick="setSegFilt('asist',null,this)">Riesgo asistencia (≤ ${SEG_ASIST_UMBRAL}%)</button>
+        </div>
+
         <div style="position:relative;display:flex;gap:4px;align-self:flex-end">
           <span style="position:absolute;top:-15px;left:0;font-size:10px;font-family:var(--mono);
             color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap">+Info</span>
@@ -1692,10 +1739,12 @@ function renderSeguimiento() {
   _segFiltCurso = 'all';
   _segFiltNota  = 'all';
   _segFiltPie   = false;
+  _segFiltAsist = false;
   _segShowExt   = false;
   _segResumFiltTipo  = 'all';
   _segResumFiltCurso = 'all';
   _segResumFiltPie   = false;
+  _segResumFiltAsist = false;
   _applySegFilters();
   _applySegResumFilters();
 }
@@ -1705,6 +1754,7 @@ function setSegFilt(dim, val, btn) {
   if(dim === 'nota')  { _segFiltNota  = val; document.querySelectorAll('#seg-filt-nota  .filter-btn').forEach(b=>b.classList.remove('active')); }
   if(dim === 'curso') { _segFiltCurso = val; }
   if(dim === 'pie')   { _segFiltPie = !_segFiltPie; if(btn) btn.classList.toggle('active', _segFiltPie); _applySegFilters(); return; }
+  if(dim === 'asist') { _segFiltAsist = !_segFiltAsist; if(btn) btn.classList.toggle('active', _segFiltAsist); _applySegFilters(); return; }
   if(btn) btn.classList.add('active');
   _applySegFilters();
 }
@@ -1716,12 +1766,13 @@ function setSegExt(btn) {
 }
 
 function _applySegFilters() {
-  const all = window._segAllStudents ?? [];
+  const all = _segPool(_segFiltAsist);
 
   let filtered = all.filter(({s, lv}) => {
     if(_segFiltTipo !== 'all' && lv !== _segFiltTipo) return false;
     if(_segFiltCurso !== 'all' && String(s.gen) !== String(_segFiltCurso)) return false;
     if(_segFiltPie && !s.pie?.activo) return false;
+    if(_segFiltAsist && !_segLowAsist(s)) return false;
     if(_segFiltNota !== 'all') {
       const pf = s.napsis[CUR_YEAR]?.pf;
       if(pf == null) return false;
@@ -1791,7 +1842,7 @@ function _applySegFilters() {
       const diaL = _segDiaAvg(s,'lectura'); const diaM = _segDiaAvg(s,'matematica'); const maP = hasMa ? _segMaEst(s) : null;
       const paesCL = _segJegLast(s,'cl'); const paesMA = _segJegLast(s,'ma');
       const pieSm = s.pie?.activo ? `<span class="pie-badge">PIE</span>` : '';
-      const dot = `<span class="risk-dot-sm" style="background:${RISK_COLOR[lv]}"></span>`;
+      const dot = `<span class="risk-dot-sm" style="background:${_segRiskColor(lv)}"></span>`;
       const extCells = [
         hasDiaL ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaL)}">${diaL!=null?diaL.toFixed(0)+'%':'—'}</td>` : '',
         hasDiaM ? `<td class="seg-ext-col" style="display:${extDisplay};text-align:center;font-family:var(--mono);font-size:11px;font-weight:600;color:${_diaCol(diaM)}">${diaM!=null?diaM.toFixed(0)+'%':'—'}</td>` : '',
@@ -1805,7 +1856,7 @@ function _applySegFilters() {
         <td class="pf-cell ${nc(nd?.pf??null)}" style="text-align:center;font-family:var(--mono);font-size:12px">${nd?.pf!=null ? nd.pf.toFixed(1) : '—'}</td>
         <td style="text-align:center;font-family:var(--mono);font-size:11px;color:${_asCol(asist)}">${asist!=null?asist+'%':'—'}</td>
         ${extCells}
-        <td style="white-space:nowrap;font-size:11px">${dot}${RISK_LABEL[lv]}</td>
+        <td style="white-space:nowrap;font-size:11px">${dot}${_segRiskLabel(lv)}</td>
       </tr>`;
     }).join('');
     return `<div style="margin-bottom:20px">
@@ -1832,17 +1883,19 @@ function setSegResumFilt(dim, val, btn) {
   if(dim === 'tipo')  { _segResumFiltTipo  = val; document.querySelectorAll('#seg-resum-filt-tipo .filter-btn').forEach(b=>b.classList.remove('active')); }
   if(dim === 'curso') { _segResumFiltCurso = val; }
   if(dim === 'pie')   { _segResumFiltPie = !_segResumFiltPie; if(btn) btn.classList.toggle('active', _segResumFiltPie); _applySegResumFilters(); return; }
+  if(dim === 'asist') { _segResumFiltAsist = !_segResumFiltAsist; if(btn) btn.classList.toggle('active', _segResumFiltAsist); _applySegResumFilters(); return; }
   if(btn) btn.classList.add('active');
   _applySegResumFilters();
 }
 
 function _applySegResumFilters() {
-  const all = window._segAllStudents ?? [];
+  const all = _segPool(_segResumFiltAsist);
 
   const filtered = all.filter(({s, lv}) => {
     if(_segResumFiltTipo  !== 'all' && lv !== _segResumFiltTipo)             return false;
     if(_segResumFiltCurso !== 'all' && String(s.gen) !== String(_segResumFiltCurso)) return false;
     if(_segResumFiltPie && !s.pie?.activo) return false;
+    if(_segResumFiltAsist && !_segLowAsist(s)) return false;
     return true;
   });
 
@@ -2021,7 +2074,7 @@ function printCurso() {
 }
 
 function printSeguimiento() {
-  const allSeg = window._segAllStudents ?? [];
+  const allSeg = _segPool(_segCurrentView === 'detalle' ? _segFiltAsist : _segResumFiltAsist);
 
   // Etiquetas para filtros
   const _RV_LABEL   = { alerta:'Alerta', activo:'Riesgo activo', preventivo:'Seg. preventivo' };
@@ -2036,6 +2089,7 @@ function printSeguimiento() {
       if(_segFiltTipo  !== 'all' && lv !== _segFiltTipo)  return false;
       if(_segFiltCurso !== 'all' && String(s.gen) !== String(_segFiltCurso)) return false;
       if(_segFiltPie && !s.pie?.activo) return false;
+      if(_segFiltAsist && !_segLowAsist(s)) return false;
       if(_segFiltNota !== 'all') {
         const pf = s.napsis[CUR_YEAR]?.pf;
         if(pf == null) return false;
@@ -2051,28 +2105,31 @@ function printSeguimiento() {
     if(_segFiltCurso !== 'all') parts.push(_genToCurso[_segFiltCurso] ?? `Gen. ${_segFiltCurso}`);
     if(_segFiltNota  !== 'all') parts.push(_PROM_LABEL[_segFiltNota] ?? _segFiltNota);
     if(_segFiltPie)             parts.push('PIE');
+    if(_segFiltAsist)           parts.push(`Asistencia ≤ ${SEG_ASIST_UMBRAL}%`);
     filterDesc = parts.length ? ` · Filtro: ${parts.join(', ')}` : '';
   } else {
     filteredSeg = allSeg.filter(({s, lv}) => {
       if(_segResumFiltTipo  !== 'all' && lv !== _segResumFiltTipo)             return false;
       if(_segResumFiltCurso !== 'all' && String(s.gen) !== String(_segResumFiltCurso)) return false;
       if(_segResumFiltPie && !s.pie?.activo) return false;
+      if(_segResumFiltAsist && !_segLowAsist(s)) return false;
       return true;
     });
     const parts = [];
     if(_segResumFiltTipo  !== 'all') parts.push(_RV_LABEL[_segResumFiltTipo] ?? _segResumFiltTipo);
     if(_segResumFiltCurso !== 'all') parts.push(_genToCurso[_segResumFiltCurso] ?? `Gen. ${_segResumFiltCurso}`);
     if(_segResumFiltPie)             parts.push('PIE');
+    if(_segResumFiltAsist)           parts.push(`Asistencia ≤ ${SEG_ASIST_UMBRAL}%`);
     filterDesc = parts.length ? ` · Filtro: ${parts.join(', ')}` : '';
   }
 
-  const riskGroups = { alerta:[], activo:[], preventivo:[] };
-  filteredSeg.forEach(({s, lv}) => riskGroups[lv].push(s));
+  const riskGroups = { alerta:[], activo:[], preventivo:[], asistencia:[] };
+  filteredSeg.forEach(({s, lv}) => riskGroups[lv ?? 'asistencia'].push(s));
 
-  const sectionHtml = ['alerta','activo','preventivo'].map(lv => {
+  const sectionHtml = ['alerta','activo','preventivo','asistencia'].map(lv => {
     if(!riskGroups[lv].length) return '';
-    const lvLabel = {alerta:'ALERTA',activo:'RIESGO ACTIVO',preventivo:'SEG. PREVENTIVO'}[lv];
-    const lvColor = {alerta:'#c0392b',activo:'#b7770d',preventivo:'#1a5276'}[lv];
+    const lvLabel = {alerta:'ALERTA',activo:'RIESGO ACTIVO',preventivo:'SEG. PREVENTIVO',asistencia:'SOLO RIESGO DE ASISTENCIA'}[lv];
+    const lvColor = {alerta:'#c0392b',activo:'#b7770d',preventivo:'#1a5276',asistencia:'#5a6e82'}[lv];
 
     // Agrupar por curso, ordenado de menor a mayor (gen desc = 1° Básico primero)
     const byGen = {};
@@ -2096,7 +2153,7 @@ function printSeguimiento() {
       const allCols = _allCols.filter(c => students.some(s => s.napsis[CUR_YEAR]?.asignaturas?.[c.key] != null));
       const thStyle = 'padding:4px 6px;border:1px solid #ccc;font-size:10px;background:#f5f5f5';
       const headers = allCols.map(c=>`<th style="${thStyle}">${c.short}</th>`).join('');
-      const lvLabel = {alerta:'Alerta',activo:'Riesgo activo',preventivo:'Seg. preventivo'}[lv];
+      const lvLabel = {alerta:'Alerta',activo:'Riesgo activo',preventivo:'Seg. preventivo',asistencia:'Solo asistencia'}[lv];
       const rows = students.map(s => {
         const nd = s.napsis[CUR_YEAR];
         const cells = allCols.map(c => {
