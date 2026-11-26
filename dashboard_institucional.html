@@ -2255,8 +2255,10 @@ function printSeguimiento() {
 }
 
 // ── Progreso (dentro de Seguimiento): Sem.1→Sem.2 del año en curso, o año a año ──
-let _segProgModo  = 'sem';   // 'sem' | 'anio'
+let _segProgModo  = 'sem';   // 'sem' | 'anio' | 'tendencia'
 let _segProgCurso = 'all';
+let _segProgFiltPie     = false;
+let _segProgFiltTutoria = false;
 const PROG_UMBRAL_LEVE   = 0.1;  // |delta| bajo esto = estable
 const PROG_UMBRAL_FUERTE = 0.3;  // |delta| sobre esto = cambio relevante
 
@@ -2277,7 +2279,9 @@ function _segProgStudentSem(s) {
   const items = (nd.col_map||[]).filter(c=>!c.np).map(c => {
     const ev = nd.evals?.[c.key];
     const sem1 = avg(ev?.['1']), sem2 = avg(ev?.['2']);
-    return { label:c.label, short:c.short, delta:(sem1!=null && sem2!=null) ? +(sem2-sem1).toFixed(2) : null };
+    const final = nd.asignaturas?.[c.key] ?? null;
+    return { label:c.label, short:c.short, sem1, sem2, final,
+      delta:(sem1!=null && sem2!=null) ? +(sem2-sem1).toFixed(2) : null };
   }).filter(i => i.delta != null);
   if(!items.length) return null;
   const avgDelta = +(items.reduce((a,i)=>a+i.delta,0)/items.length).toFixed(2);
@@ -2295,7 +2299,9 @@ function _segProgStudentAnio(s) {
     const keyPrev = keyPrevByLabel[c.label];
     const notaPrev = keyPrev!=null ? ndPrev.asignaturas?.[keyPrev] : null;
     const notaCur  = ndCur.asignaturas?.[c.key];
-    return (notaPrev!=null && notaCur!=null) ? { label:c.label, short:c.short, delta:+(notaCur-notaPrev).toFixed(2) } : null;
+    return (notaPrev!=null && notaCur!=null)
+      ? { label:c.label, short:c.short, prev:notaPrev, cur:notaCur, final:notaCur, delta:+(notaCur-notaPrev).toFixed(2) }
+      : null;
   }).filter(Boolean);
   if(!items.length) return null;
   const avgDelta = +(items.reduce((a,i)=>a+i.delta,0)/items.length).toFixed(2);
@@ -2312,29 +2318,20 @@ function _segProgStudentTendencia(s) {
   const nd = s.napsis[CUR_YEAR];
   if(!nd) return null;
   const clean = arr => (arr||[]).filter(e => e.name !== 'Promedio sem.' && e.grade != null).map(e=>e.grade);
-  const trend = grades => {
-    const mid = Math.floor(grades.length/2);
-    const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
-    return +(avg(grades.slice(mid)) - avg(grades.slice(0,mid))).toFixed(2);
-  };
+  const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
   const items = (nd.col_map||[]).filter(c=>!c.np).map(c => {
     const ev = nd.evals?.[c.key];
     const g2 = clean(ev?.['2']), g1 = clean(ev?.['1']);
     const grades = g2.length >= 2 ? g2 : (g1.length >= 2 ? g1 : null);
-    return grades ? { label:c.label, short:c.short, delta:trend(grades) } : null;
+    if(!grades) return null;
+    const mid = Math.floor(grades.length/2);
+    const first = avg(grades.slice(0,mid)), second = avg(grades.slice(mid));
+    const final = nd.asignaturas?.[c.key] ?? null;
+    return { label:c.label, short:c.short, first, second, final, delta:+(second-first).toFixed(2) };
   }).filter(Boolean);
   if(!items.length) return null;
   const avgDelta = +(items.reduce((a,i)=>a+i.delta,0)/items.length).toFixed(2);
   return { s, gen:s.gen, items, avgDelta };
-}
-
-// Estado de tutoría de un estudiante — ver read_tutorias (Python) / p['tutorias']
-function _tutoriaCellHtml(s) {
-  const tuts = s.tutorias || [];
-  if(!tuts.length) return `<span style="color:var(--muted);font-size:11px">—</span>`;
-  const t = tuts.find(x=>x.estado==='En curso') || tuts[0];
-  const col = t.estado === 'En curso' ? 'var(--green)' : t.estado === 'No iniciada' ? 'var(--yellow)' : 'var(--muted)';
-  return `<span class="pie-badge" style="font-size:10px;color:${col};border-color:${col}">${t.estado}</span>`;
 }
 
 function setSegProgModo(modo, btn) {
@@ -2349,6 +2346,54 @@ function setSegProgCurso(val) {
   _renderSegProgresoBody();
 }
 
+function setSegProgPie(btn) {
+  _segProgFiltPie = !_segProgFiltPie;
+  if(btn) btn.classList.toggle('active', _segProgFiltPie);
+  _renderSegProgresoBody();
+}
+
+function setSegProgTutoria(btn) {
+  _segProgFiltTutoria = !_segProgFiltTutoria;
+  if(btn) btn.classList.toggle('active', _segProgFiltTutoria);
+  _renderSegProgresoBody();
+}
+
+// Tabla detallada por asignatura (Sem.1/Sem.2/Final o equivalentes según el modo) — se muestra
+// al filtrar un curso específico, en vez del ranking de mayor variación entre todos los cursos.
+function _renderSegProgresoDetalleCurso(rows) {
+  const headers = _segProgModo === 'anio' ? ['Año anterior','Año actual']
+                : _segProgModo === 'tendencia' ? ['1ª mitad','2ª mitad','Final']
+                : ['Sem. 1','Sem. 2','Final'];
+  const fmt = v => v == null ? '—' : v.toFixed(1);
+  const sortedRows = [...rows].sort((a,b) => a.s.nombre.localeCompare(b.s.nombre));
+  const blocks = sortedRows.map(r => {
+    const itemsSorted = [...r.items].sort((a,b) => a.delta - b.delta);
+    const trs = itemsSorted.map(i => {
+      const cells = _segProgModo === 'anio' ? [i.prev, i.cur]
+                  : _segProgModo === 'tendencia' ? [i.first, i.second, i.final]
+                  : [i.sem1, i.sem2, i.final];
+      return `<tr>
+        <td style="white-space:nowrap">${i.label}</td>
+        ${cells.map(v=>`<td style="text-align:center;font-family:var(--mono)">${fmt(v)}</td>`).join('')}
+        <td style="text-align:center;font-family:var(--mono);font-weight:700;color:${_segProgDeltaColor(i.delta)}">${i.delta>0?'+':''}${i.delta.toFixed(1)}</td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:18px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px;cursor:pointer" onclick="openStudent('${r.s.key}')">
+        ${r.s.nombre}
+        <span style="font-family:var(--mono);font-weight:700;margin-left:8px;color:${_segProgDeltaColor(r.avgDelta)}">${r.avgDelta>0?'+':''}${r.avgDelta.toFixed(1)}</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="std-table" style="font-size:12px">
+          <thead><tr><th style="text-align:left">Asignatura</th>${headers.map(h=>`<th>${h}</th>`).join('')}<th>Delta</th></tr></thead>
+          <tbody>${trs}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+  return blocks || '<div style="color:var(--muted);font-style:italic;padding:16px">Sin datos suficientes para este curso.</div>';
+}
+
 function _buildSegProgresoShell() {
   const cursoOpts = CURSOS.slice().sort((a,b)=>b.gen-a.gen)
     .map(c => `<option value="${c.gen}">${c.grade_name}</option>`).join('');
@@ -2357,8 +2402,8 @@ function _buildSegProgresoShell() {
       Compara el desempeño de cada estudiante y curso entre dos períodos: <strong>Sem. 1 → Sem. 2</strong> (evaluaciones
       del año en curso), <strong>año a año</strong> (nota final del año anterior vs. la actual, por asignatura en común)
       o <strong>tendencia</strong> dentro del semestre que está en curso — primera mitad de las evaluaciones registradas
-      vs. la segunda mitad, para detectar una caída de promedio antes de que termine el semestre. Se cruza con el
-      registro de tutorías para ver quién ya tiene apoyo y quién, con una caída fuerte, todavía no.
+      vs. la segunda mitad, para detectar una caída de promedio antes de que termine el semestre. Al elegir un curso
+      específico, el ranking se reemplaza por el detalle de cada asignatura con sus promedios.
       <span style="color:var(--green);margin-left:8px">● Mejora</span>
       <span style="color:var(--muted);margin-left:8px">● Estable</span>
       <span style="color:var(--red);margin-left:8px">● Retrocede</span>
@@ -2382,6 +2427,14 @@ function _buildSegProgresoShell() {
           ${cursoOpts}
         </select>
       </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:10px;font-family:var(--mono);color:var(--muted);
+          text-transform:uppercase;letter-spacing:1px">Programa</span>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="filter-btn" id="seg-prog-filt-pie" onclick="setSegProgPie(this)">PIE</button>
+          <button class="filter-btn" id="seg-prog-filt-tutoria" onclick="setSegProgTutoria(this)">Tutoría</button>
+        </div>
+      </div>
     </div>
     <div class="kpi-row" id="kpi-seg-prog"></div>
     <div class="card mb24">
@@ -2394,6 +2447,8 @@ function _buildSegProgresoShell() {
     </div>`;
   _segProgModo = 'sem';
   _segProgCurso = 'all';
+  _segProgFiltPie = false;
+  _segProgFiltTutoria = false;
   _renderSegProgresoBody();
 }
 
@@ -2403,12 +2458,16 @@ function _renderSegProgresoBody() {
                 : _segProgStudentSem;
   let rows = EST.filter(s => !s.retirado).map(compute).filter(Boolean);
   if(_segProgCurso !== 'all') rows = rows.filter(r => String(r.gen) === String(_segProgCurso));
+  if(_segProgFiltPie) rows = rows.filter(r => r.s.pie?.activo);
+  if(_segProgFiltTutoria) rows = rows.filter(r => _tieneTutoria(r.s));
 
   const periodLabel = _segProgModo === 'anio' ? 'año a año'
                      : _segProgModo === 'tendencia' ? 'tendencia dentro del semestre en curso'
                      : 'Sem. 1 → Sem. 2';
   document.getElementById('seg-prog-heatmap-title').textContent = `Progreso promedio por curso y asignatura · ${periodLabel}`;
-  document.getElementById('seg-prog-ranking-title').textContent = `Estudiantes — mayor variación · ${periodLabel}`;
+  document.getElementById('seg-prog-ranking-title').textContent = _segProgCurso !== 'all'
+    ? `Detalle por asignatura · ${periodLabel}`
+    : `Estudiantes — mayor variación · ${periodLabel}`;
 
   if(!rows.length) {
     document.getElementById('kpi-seg-prog').innerHTML = '';
@@ -2423,13 +2482,11 @@ function _renderSegProgresoBody() {
   const bajan    = rows.filter(r => r.avgDelta < -PROG_UMBRAL_LEVE).length;
   const estables = rows.length - mejoran - bajan;
   const promGeneral = +(rows.reduce((a,r)=>a+r.avgDelta,0)/rows.length).toFixed(2);
-  const sinTutoriaCriticos = rows.filter(r => r.avgDelta <= -PROG_UMBRAL_FUERTE && !_tieneTutoria(r.s)).length;
   document.getElementById('kpi-seg-prog').innerHTML = `
     <div class="kpi"><div class="value" style="color:${_segProgDeltaColor(promGeneral)}">${promGeneral>0?'+':''}${promGeneral.toFixed(1)}</div><div class="desc">Delta promedio</div></div>
     <div class="kpi"><div class="value cg">${mejoran}</div><div class="desc">Mejoran</div></div>
     <div class="kpi"><div class="value" style="color:var(--muted)">${estables}</div><div class="desc">Estables</div></div>
-    <div class="kpi"><div class="value cr">${bajan}</div><div class="desc">Bajan</div></div>
-    <div class="kpi"><div class="value cr">${sinTutoriaCriticos}</div><div class="desc">Caída fuerte sin tutoría</div></div>`;
+    <div class="kpi"><div class="value cr">${bajan}</div><div class="desc">Bajan</div></div>`;
 
   // Heatmap curso × asignatura (promedio de deltas)
   const byGen = {};
@@ -2459,7 +2516,13 @@ function _renderSegProgresoBody() {
   hm += '</tbody></table></div>';
   document.getElementById('seg-prog-heatmap').innerHTML = hm;
 
-  // Ranking: estudiantes con mayor caída y mayor mejora
+  // Curso específico seleccionado: detalle completo por asignatura en vez del ranking general
+  if(_segProgCurso !== 'all') {
+    document.getElementById('seg-prog-ranking').innerHTML = _renderSegProgresoDetalleCurso(rows);
+    return;
+  }
+
+  // Todos los cursos: ranking de estudiantes con mayor caída y mayor mejora
   const sorted = [...rows].sort((a,b) => a.avgDelta - b.avgDelta);
   const picked = [...sorted.slice(0,8), ...sorted.slice(-8)];
   const seen = new Set();
@@ -2469,27 +2532,22 @@ function _renderSegProgresoBody() {
     const courseName = _genToCurso[r.gen] ?? `Gen. ${r.gen}`;
     const worst = [...r.items].sort((a,b)=>a.delta-b.delta)[0];
     const best  = [...r.items].sort((a,b)=>b.delta-a.delta)[0];
-    const necesitaTutoria = r.avgDelta <= -PROG_UMBRAL_FUERTE && !_tieneTutoria(r.s);
-    const tutCell = necesitaTutoria
-      ? `<span class="pie-badge" style="font-size:10px;color:var(--red);border-color:var(--red)">⚠ sin tutoría</span>`
-      : _tutoriaCellHtml(r.s);
     return `<tr>
       <td style="cursor:pointer;font-weight:600" onclick="openStudent('${r.s.key}')">${r.s.nombre}</td>
       <td><span class="course-badge">${courseName}</span></td>
       <td style="text-align:center;font-family:var(--mono);font-weight:700;color:${_segProgDeltaColor(r.avgDelta)}">${r.avgDelta>0?'+':''}${r.avgDelta.toFixed(1)}</td>
       <td style="font-size:11px;color:var(--muted)">${worst ? `${worst.short} ${worst.delta>0?'+':''}${worst.delta.toFixed(1)}` : '—'}</td>
       <td style="font-size:11px;color:var(--muted)">${best ? `${best.short} ${best.delta>0?'+':''}${best.delta.toFixed(1)}` : '—'}</td>
-      <td>${tutCell}</td>
     </tr>`;
   }).join('');
   document.getElementById('seg-prog-ranking').innerHTML = `
     <div style="overflow-x:auto">
       <table class="std-table" style="font-size:12px">
-        <thead><tr><th style="text-align:left">Estudiante</th><th>Curso</th><th>Delta prom.</th><th>Mayor caída</th><th>Mayor mejora</th><th>Tutoría</th></tr></thead>
+        <thead><tr><th style="text-align:left">Estudiante</th><th>Curso</th><th>Delta prom.</th><th>Mayor caída</th><th>Mayor mejora</th></tr></thead>
         <tbody>${rankRows}</tbody>
       </table>
     </div>
-    <div class="table-note">Estudiantes de mayor variación (caída y mejora) · Clic en nombre → perfil del estudiante · ⚠ = caída fuerte sin tutoría registrada</div>`;
+    <div class="table-note">Estudiantes de mayor variación (caída y mejora) · Clic en nombre → perfil del estudiante · Filtra por un curso específico para ver el detalle por asignatura</div>`;
 }
 
 const _DIA_PERIODO_KEYS   = ['diagnostico','monitoreo','cierre'];
