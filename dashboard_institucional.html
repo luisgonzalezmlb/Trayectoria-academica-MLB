@@ -2259,6 +2259,7 @@ let _segProgModo  = 'sem';   // 'sem' | 'anio' | 'tendencia'
 let _segProgCurso = 'all';
 let _segProgFiltPie     = false;
 let _segProgFiltTutoria = false;
+let _segProgDetalleSort = 'peor';   // 'peor' (mayor caída primero) | 'mejor' (mayor mejora primero) | 'alfa'
 const PROG_UMBRAL_LEVE   = 0.1;  // |delta| bajo esto = estable
 const PROG_UMBRAL_FUERTE = 0.3;  // |delta| sobre esto = cambio relevante
 
@@ -2360,13 +2361,32 @@ function setSegProgTutoria(btn) {
 
 // Tabla detallada por asignatura (Sem.1/Sem.2/Final o equivalentes según el modo) — se muestra
 // al filtrar un curso específico, en vez del ranking de mayor variación entre todos los cursos.
+function setSegProgDetalleSort(val) {
+  _segProgDetalleSort = val;
+  _renderSegProgresoBody();
+}
+
 function _renderSegProgresoDetalleCurso(rows) {
   const headers = _segProgModo === 'anio' ? ['Año anterior','Año actual']
                 : _segProgModo === 'tendencia' ? ['1ª mitad','2ª mitad','Final']
                 : ['Sem. 1','Sem. 2','Final'];
   const fmt = v => v == null ? '—' : v.toFixed(1);
-  const sortedRows = [...rows].sort((a,b) => a.s.nombre.localeCompare(b.s.nombre));
+  const sortedRows = [...rows].sort((a,b) => {
+    if(_segProgDetalleSort === 'alfa')  return a.s.nombre.localeCompare(b.s.nombre);
+    if(_segProgDetalleSort === 'mejor') return b.avgDelta - a.avgDelta;
+    return a.avgDelta - b.avgDelta;   // 'peor': mayor caída primero
+  });
+
+  const sortBtn = (val, label) =>
+    `<button class="filter-btn ${_segProgDetalleSort===val?'active':''}" onclick="setSegProgDetalleSort('${val}')">${label}</button>`;
+  const sortBar = `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px">
+    ${sortBtn('peor','Mayor caída primero')}
+    ${sortBtn('mejor','Mayor mejora primero')}
+    ${sortBtn('alfa','Alfabético')}
+  </div>`;
+
   const blocks = sortedRows.map(r => {
+    const rid = `progstu-${r.s.key}`;
     const itemsSorted = [...r.items].sort((a,b) => a.delta - b.delta);
     const trs = itemsSorted.map(i => {
       const cells = _segProgModo === 'anio' ? [i.prev, i.cur]
@@ -2378,20 +2398,25 @@ function _renderSegProgresoDetalleCurso(rows) {
         <td style="text-align:center;font-family:var(--mono);font-weight:700;color:${_segProgDeltaColor(i.delta)}">${i.delta>0?'+':''}${i.delta.toFixed(1)}</td>
       </tr>`;
     }).join('');
-    return `<div style="margin-bottom:18px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:4px;cursor:pointer" onclick="openStudent('${r.s.key}')">
-        ${r.s.nombre}
-        <span style="font-family:var(--mono);font-weight:700;margin-left:8px;color:${_segProgDeltaColor(r.avgDelta)}">${r.avgDelta>0?'+':''}${r.avgDelta.toFixed(1)}</span>
+    return `<div style="border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 4px;cursor:pointer" onclick="toggleArticRow('${rid}')">
+        <span>
+          <span id="arr-${rid}" style="display:inline-block;margin-right:6px;font-size:9px;color:var(--muted)">▶</span>
+          <strong onclick="event.stopPropagation();openStudent('${r.s.key}')" style="cursor:pointer">${r.s.nombre}</strong>
+        </span>
+        <span style="font-family:var(--mono);font-weight:700;color:${_segProgDeltaColor(r.avgDelta)}">${r.avgDelta>0?'+':''}${r.avgDelta.toFixed(1)}</span>
       </div>
-      <div style="overflow-x:auto">
-        <table class="std-table" style="font-size:12px">
-          <thead><tr><th style="text-align:left">Asignatura</th>${headers.map(h=>`<th>${h}</th>`).join('')}<th>Delta</th></tr></thead>
-          <tbody>${trs}</tbody>
-        </table>
+      <div id="${rid}" style="display:none;padding:4px 4px 16px 22px">
+        <div style="overflow-x:auto">
+          <table class="std-table" style="font-size:12px">
+            <thead><tr><th style="text-align:left">Asignatura</th>${headers.map(h=>`<th>${h}</th>`).join('')}<th>Delta</th></tr></thead>
+            <tbody>${trs}</tbody>
+          </table>
+        </div>
       </div>
     </div>`;
   }).join('');
-  return blocks || '<div style="color:var(--muted);font-style:italic;padding:16px">Sin datos suficientes para este curso.</div>';
+  return sortBar + (blocks || '<div style="color:var(--muted);font-style:italic;padding:16px">Sin datos suficientes para este curso.</div>');
 }
 
 function _buildSegProgresoShell() {
@@ -2449,6 +2474,7 @@ function _buildSegProgresoShell() {
   _segProgCurso = 'all';
   _segProgFiltPie = false;
   _segProgFiltTutoria = false;
+  _segProgDetalleSort = 'peor';
   _renderSegProgresoBody();
 }
 
