@@ -2260,6 +2260,7 @@ let _segProgCurso = 'all';
 let _segProgFiltPie     = false;
 let _segProgFiltTutoria = false;
 let _segProgDetalleSort = 'peor';   // 'peor' (mayor caída primero) | 'mejor' (mayor mejora primero) | 'alfa'
+let _segProgDetalleAsig = 'all';    // 'all' (agrupado por estudiante) | label de una asignatura (tabla plana)
 const PROG_UMBRAL_LEVE   = 0.1;  // |delta| bajo esto = estable
 const PROG_UMBRAL_FUERTE = 0.3;  // |delta| sobre esto = cambio relevante
 
@@ -2366,25 +2367,80 @@ function setSegProgDetalleSort(val) {
   _renderSegProgresoBody();
 }
 
+function setSegProgDetalleAsig(val) {
+  _segProgDetalleAsig = val;
+  _renderSegProgresoBody();
+}
+
 function _renderSegProgresoDetalleCurso(rows) {
   const headers = _segProgModo === 'anio' ? ['Año anterior','Año actual']
                 : _segProgModo === 'tendencia' ? ['1ª mitad','2ª mitad','Final']
                 : ['Sem. 1','Sem. 2','Final'];
   const fmt = v => v == null ? '—' : v.toFixed(1);
+
+  // Asignaturas disponibles en este curso (con el filtro de período/PIE/Tutoría ya aplicado)
+  const subjSet = new Set();
+  rows.forEach(r => r.items.forEach(i => subjSet.add(i.label)));
+  const subjects = [...subjSet].sort();
+  if(_segProgDetalleAsig !== 'all' && !subjects.includes(_segProgDetalleAsig)) _segProgDetalleAsig = 'all';
+  const asigOpts = subjects.map(label =>
+    `<option value="${label}" ${_segProgDetalleAsig===label?'selected':''}>${label}</option>`).join('');
+
+  const sortBtn = (val, label) =>
+    `<button class="filter-btn ${_segProgDetalleSort===val?'active':''}" onclick="setSegProgDetalleSort('${val}')">${label}</button>`;
+  const controlsBar = `<div style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:flex-end;margin-bottom:14px">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <span style="font-size:10px;font-family:var(--mono);color:var(--muted);
+        text-transform:uppercase;letter-spacing:1px">Asignatura</span>
+      <select class="course-select" style="font-size:12px;padding:4px 8px;height:28px" onchange="setSegProgDetalleAsig(this.value)">
+        <option value="all" ${_segProgDetalleAsig==='all'?'selected':''}>Todas (agrupado por estudiante)</option>
+        ${asigOpts}
+      </select>
+    </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      ${sortBtn('peor','Mayor caída primero')}
+      ${sortBtn('mejor','Mayor mejora primero')}
+      ${sortBtn('alfa','Alfabético')}
+    </div>
+  </div>`;
+
+  // Una asignatura específica: tabla plana con todos los estudiantes del curso visibles a la vez
+  if(_segProgDetalleAsig !== 'all') {
+    const subjRows = rows
+      .map(r => ({ s:r.s, item:r.items.find(i => i.label === _segProgDetalleAsig) }))
+      .filter(x => x.item);
+    subjRows.sort((a,b) => {
+      if(_segProgDetalleSort === 'alfa')  return a.s.nombre.localeCompare(b.s.nombre);
+      if(_segProgDetalleSort === 'mejor') return b.item.delta - a.item.delta;
+      return a.item.delta - b.item.delta;
+    });
+    const trs = subjRows.map(({s, item}) => {
+      const cells = _segProgModo === 'anio' ? [item.prev, item.cur]
+                  : _segProgModo === 'tendencia' ? [item.first, item.second, item.final]
+                  : [item.sem1, item.sem2, item.final];
+      return `<tr>
+        <td style="cursor:pointer;font-weight:600" onclick="openStudent('${s.key}')">${s.nombre}</td>
+        ${cells.map(v=>`<td style="text-align:center;font-family:var(--mono)">${fmt(v)}</td>`).join('')}
+        <td style="text-align:center;font-family:var(--mono);font-weight:700;color:${_segProgDeltaColor(item.delta)}">${item.delta>0?'+':''}${item.delta.toFixed(1)}</td>
+      </tr>`;
+    }).join('');
+    const table = subjRows.length
+      ? `<div style="overflow-x:auto">
+          <table class="std-table" style="font-size:12px">
+            <thead><tr><th style="text-align:left">Estudiante</th>${headers.map(h=>`<th>${h}</th>`).join('')}<th>Delta</th></tr></thead>
+            <tbody>${trs}</tbody>
+          </table>
+        </div>`
+      : '<div style="color:var(--muted);font-style:italic;padding:16px">Sin datos para esta asignatura en este curso.</div>';
+    return controlsBar + table;
+  }
+
+  // "Todas": agrupado por estudiante, una fila colapsable por estudiante con todas sus asignaturas
   const sortedRows = [...rows].sort((a,b) => {
     if(_segProgDetalleSort === 'alfa')  return a.s.nombre.localeCompare(b.s.nombre);
     if(_segProgDetalleSort === 'mejor') return b.avgDelta - a.avgDelta;
     return a.avgDelta - b.avgDelta;   // 'peor': mayor caída primero
   });
-
-  const sortBtn = (val, label) =>
-    `<button class="filter-btn ${_segProgDetalleSort===val?'active':''}" onclick="setSegProgDetalleSort('${val}')">${label}</button>`;
-  const sortBar = `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px">
-    ${sortBtn('peor','Mayor caída primero')}
-    ${sortBtn('mejor','Mayor mejora primero')}
-    ${sortBtn('alfa','Alfabético')}
-  </div>`;
-
   const blocks = sortedRows.map(r => {
     const rid = `progstu-${r.s.key}`;
     const itemsSorted = [...r.items].sort((a,b) => a.delta - b.delta);
@@ -2416,7 +2472,7 @@ function _renderSegProgresoDetalleCurso(rows) {
       </div>
     </div>`;
   }).join('');
-  return sortBar + (blocks || '<div style="color:var(--muted);font-style:italic;padding:16px">Sin datos suficientes para este curso.</div>');
+  return controlsBar + (blocks || '<div style="color:var(--muted);font-style:italic;padding:16px">Sin datos suficientes para este curso.</div>');
 }
 
 function _buildSegProgresoShell() {
@@ -2475,6 +2531,7 @@ function _buildSegProgresoShell() {
   _segProgFiltPie = false;
   _segProgFiltTutoria = false;
   _segProgDetalleSort = 'peor';
+  _segProgDetalleAsig = 'all';
   _renderSegProgresoBody();
 }
 
