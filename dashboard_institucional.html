@@ -2263,6 +2263,12 @@ let _segProgDetalleSort = 'peor';   // 'peor' (mayor caída primero) | 'mejor' (
 let _segProgDetalleAsig = 'all';    // 'all' (agrupado por estudiante) | label de una asignatura (tabla plana)
 const PROG_UMBRAL_LEVE   = 0.1;  // |delta| bajo esto = estable
 const PROG_UMBRAL_FUERTE = 0.3;  // |delta| sobre esto = cambio relevante
+const PROG_MIN_EVALS     = 2;    // mínimo de notas individuales reales por semestre para calcular un delta
+
+// Notas individuales reales de un semestre (excluye la fila sintética "Promedio sem." de Napsis y nulos)
+function _segProgCleanGrades(arr) {
+  return (arr||[]).filter(e => e.name !== 'Promedio sem.' && e.grade != null).map(e=>e.grade);
+}
 
 function _segProgDeltaColor(d) {
   if(d == null) return 'var(--muted)';
@@ -2277,14 +2283,18 @@ function _segProgDeltaColor(d) {
 function _segProgStudentSem(s) {
   const nd = s.napsis[CUR_YEAR];
   if(!nd) return null;
-  const avg = arr => arr && arr.length ? arr.reduce((a,e)=>a+e.grade,0)/arr.length : null;
+  const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
   const items = (nd.col_map||[]).filter(c=>!c.np).map(c => {
     const ev = nd.evals?.[c.key];
-    const sem1 = avg(ev?.['1']), sem2 = avg(ev?.['2']);
+    const g1 = _segProgCleanGrades(ev?.['1']), g2 = _segProgCleanGrades(ev?.['2']);
+    // Si a algún semestre le faltan notas reales (p.ej. 2° semestre recién empieza),
+    // no calcular delta para esa asignatura: con 0-1 notas el promedio es inestable
+    // y produce caídas/subidas enormes que no reflejan un cambio real (feedback de Luis).
+    if(g1.length < PROG_MIN_EVALS || g2.length < PROG_MIN_EVALS) return null;
+    const sem1 = avg(g1), sem2 = avg(g2);
     const final = nd.asignaturas?.[c.key] ?? null;
-    return { label:c.label, short:c.short, sem1, sem2, final,
-      delta:(sem1!=null && sem2!=null) ? +(sem2-sem1).toFixed(2) : null };
-  }).filter(i => i.delta != null);
+    return { label:c.label, short:c.short, sem1, sem2, final, delta:+(sem2-sem1).toFixed(2) };
+  }).filter(Boolean);
   if(!items.length) return null;
   const avgDelta = +(items.reduce((a,i)=>a+i.delta,0)/items.length).toFixed(2);
   return { s, gen:s.gen, items, avgDelta };
@@ -2319,12 +2329,11 @@ function _segProgStudentAnio(s) {
 function _segProgStudentTendencia(s) {
   const nd = s.napsis[CUR_YEAR];
   if(!nd) return null;
-  const clean = arr => (arr||[]).filter(e => e.name !== 'Promedio sem.' && e.grade != null).map(e=>e.grade);
   const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
   const items = (nd.col_map||[]).filter(c=>!c.np).map(c => {
     const ev = nd.evals?.[c.key];
-    const g2 = clean(ev?.['2']), g1 = clean(ev?.['1']);
-    const grades = g2.length >= 2 ? g2 : (g1.length >= 2 ? g1 : null);
+    const g2 = _segProgCleanGrades(ev?.['2']), g1 = _segProgCleanGrades(ev?.['1']);
+    const grades = g2.length >= PROG_MIN_EVALS ? g2 : (g1.length >= PROG_MIN_EVALS ? g1 : null);
     if(!grades) return null;
     const mid = Math.floor(grades.length/2);
     const first = avg(grades.slice(0,mid)), second = avg(grades.slice(mid));
